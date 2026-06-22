@@ -1,0 +1,338 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "E:\\CNC Harmony\\cnc-harmony-react\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "tests/e2e/portal-access.spec.ts",
+      "--reporter=json"
+    ],
+    "configFile": "E:\\CNC Harmony\\cnc-harmony-react\\playwright.config.ts",
+    "rootDir": "E:/CNC Harmony/cnc-harmony-react/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "E:/CNC Harmony/cnc-harmony-react/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "E:/CNC Harmony/cnc-harmony-react/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "portal-access.spec.ts",
+      "file": "portal-access.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "public access",
+          "file": "portal-access.spec.ts",
+          "line": 107,
+          "column": 6,
+          "specs": [
+            {
+              "title": "public visitors can browse customer-safe pages without login",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1761,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:19:23.518Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-a9a0cb3ae7e389bd5365",
+              "file": "portal-access.spec.ts",
+              "line": 108,
+              "column": 3
+            },
+            {
+              "title": "public visitors can open staff login and sign in from the public shell",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1320,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:19:25.346Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-217b2e467c66b0632e41",
+              "file": "portal-access.spec.ts",
+              "line": 133,
+              "column": 3
+            },
+            {
+              "title": "logged-in staff always land on the dashboard from public entry points",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 30789,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "E:\\CNC Harmony\\cnc-harmony-react\\tests\\e2e\\portal-access.spec.ts",
+                            "column": 34,
+                            "line": 101
+                          },
+                          "message": "Error: locator.fill: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('Email')\u001b[22m\n\n\n   99 | async function loginAs(page: Page, credentials: { email: string; password: string }) {\n  100 |   await page.goto('/login', { waitUntil: 'domcontentloaded' })\n> 101 |   await page.getByLabel('Email').fill(credentials.email)\n      |                                  ^\n  102 |   await page.getByLabel('Password').fill(credentials.password)\n  103 |   await page.getByRole('button', { name: 'Sign in' }).click()\n  104 |   await expect(page).toHaveURL(/\\/dashboard$/)\n    at loginAs (E:\\CNC Harmony\\cnc-harmony-react\\tests\\e2e\\portal-access.spec.ts:101:34)\n    at E:\\CNC Harmony\\cnc-harmony-react\\tests\\e2e\\portal-access.spec.ts:209:5"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:19:26.671Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "E:\\CNC Harmony\\cnc-harmony-react\\test-results\\portal-access-public-acces-287c6-rd-from-public-entry-points-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "E:\\CNC Harmony\\cnc-harmony-react\\test-results\\portal-access-public-acces-287c6-rd-from-public-entry-points-chromium\\video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "E:\\CNC Harmony\\cnc-harmony-react\\test-results\\portal-access-public-acces-287c6-rd-from-public-entry-points-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "E:\\CNC Harmony\\cnc-harmony-react\\test-results\\portal-access-public-acces-287c6-rd-from-public-entry-points-chromium\\trace.zip"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-ba98a404477b5e1d25ee",
+              "file": "portal-access.spec.ts",
+              "line": 195,
+              "column": 3
+            },
+            {
+              "title": "public visitors are redirected to staff login from internal routes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1221,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:19:57.942Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-e6d8e39454a51cd5166b",
+              "file": "portal-access.spec.ts",
+              "line": 219,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "staff login and access",
+          "file": "portal-access.spec.ts",
+          "line": 228,
+          "column": 6,
+          "specs": [
+            {
+              "title": "management staff can access all internal modules and see actions",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 15957,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:19:59.234Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-75815b347b261d230a6e",
+              "file": "portal-access.spec.ts",
+              "line": 229,
+              "column": 3
+            },
+            {
+              "title": "employees can access internal read-only modules but not management actions",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 10200,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-22T10:20:15.197Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bb92af38cdad12318e93-a4a34404a8087eed1f45",
+              "file": "portal-access.spec.ts",
+              "line": 280,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-06-22T10:18:26.791Z",
+    "duration": 118741.08700000001,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

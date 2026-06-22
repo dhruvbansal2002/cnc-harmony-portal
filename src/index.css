@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+}
+
+:root {
+  --color-bg: #04070c;
+  --color-surface: #0a0f15;
+  --color-surface-2: #0f151d;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text: #f3f4f6;
+  --color-muted: #9ca3af;
+  --color-accent: #f97316;
+  --color-accent-soft: rgba(249, 115, 22, 0.12);
+  --color-chrome: #c4c8cf;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  min-height: 100%;
+  background: var(--color-bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top, rgba(249, 115, 22, 0.07), transparent 30%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.04), transparent 22%),
+    linear-gradient(180deg, #070b10 0%, #04070c 100%);
+  color: var(--color-text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(249, 115, 22, 0.28);
+  color: #f8fafc;
+}
+
+div.overflow-x-auto {
+  overflow-y: visible;
+  position: relative;
+}
+
+details.group.relative.inline-block {
+  position: relative;
+  z-index: 40;
+}
+
+details.group.relative.inline-block > summary {
+  position: relative;
+  z-index: 41;
+}
+
+details.group.relative.inline-block > div {
+  z-index: 60;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
