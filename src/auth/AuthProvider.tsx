@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { AuthContext } from './authContext'
@@ -115,6 +115,7 @@ function deriveAccessLevel(
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const isMountedRef = useRef(true)
   const [state, setState] = useState<AuthState>(
     isSupabaseConfigured
       ? defaultState
@@ -126,167 +127,170 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
   )
 
+  const syncFromSession = useCallback(async (session: Session | null) => {
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (!session?.user) {
+      setState({
+        ...defaultState,
+        status: 'signed_out',
+      })
+      return
+    }
+
+    const supabase = getSupabaseClient()
+
+    setState((current) => ({
+      ...current,
+      status: 'loading',
+      session,
+      authUser: session.user,
+      error: null,
+    }))
+
+    const { data: portalUserData, error: portalUserError } = await supabase
+      .from('users')
+      .select(AUTH_USER_SELECT)
+      .eq('id', session.user.id)
+      .maybeSingle()
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (portalUserError) {
+      setState({
+        ...defaultState,
+        status: 'signed_out',
+        error: portalUserError.message,
+      })
+      return
+    }
+
+    if (!portalUserData) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+      })
+      return
+    }
+
+    const portalUser = portalUserData as PortalUserRecord
+
+    if (!portalUser.is_active) {
+      setState({
+        ...defaultState,
+        status: 'inactive',
+        session,
+        authUser: session.user,
+        portalUser,
+        error: 'This portal account is inactive.',
+      })
+      return
+    }
+
+    const employeePromise = portalUser.employee_id
+      ? supabase
+          .from('employees')
+          .select(EMPLOYEE_SELECT)
+          .eq('id', portalUser.employee_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+
+    const customerPromise = portalUser.customer_id
+      ? supabase
+          .from('customers')
+          .select(CUSTOMER_SELECT)
+          .eq('id', portalUser.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+
+    const [employeeResult, customerResult] = await Promise.all([
+      employeePromise,
+      customerPromise,
+    ])
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (employeeResult.error) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+        portalUser,
+        error: employeeResult.error.message,
+      })
+      return
+    }
+
+    if (customerResult.error) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+        portalUser,
+        error: customerResult.error.message,
+      })
+      return
+    }
+
+    const employee = employeeResult.data as EmployeeRecord | null
+    const customer = customerResult.data as CustomerRecord | null
+
+    if (portalUser.permission_level === 'employee' && !employee) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+        portalUser,
+        error: null,
+      })
+      return
+    }
+
+    if (portalUser.permission_level === 'customer' && !customer) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+        portalUser,
+        error: 'This portal user is missing the linked customer profile.',
+      })
+      return
+    }
+
+    const accessLevel = deriveAccessLevel(portalUser, employee)
+
+    setState({
+      status: 'ready',
+      session,
+      authUser: session.user,
+      portalUser,
+      employee,
+      customer,
+      accessLevel,
+      error: null,
+    })
+  }, [])
+
   useEffect(() => {
     if (!isSupabaseConfigured) {
       return undefined
     }
 
+    isMountedRef.current = true
+
     const supabase = getSupabaseClient()
-    let isMounted = true
-
-    const syncFromSession = async (session: Session | null) => {
-      if (!isMounted) {
-        return
-      }
-
-      if (!session?.user) {
-        setState({
-          ...defaultState,
-          status: 'signed_out',
-        })
-        return
-      }
-
-      setState((current) => ({
-        ...current,
-        status: 'loading',
-        session,
-        authUser: session.user,
-        error: null,
-      }))
-
-      const { data: portalUserData, error: portalUserError } = await supabase
-        .from('users')
-        .select(AUTH_USER_SELECT)
-        .eq('id', session.user.id)
-        .maybeSingle()
-
-      if (!isMounted) {
-        return
-      }
-
-      if (portalUserError) {
-        setState({
-          ...defaultState,
-          status: 'signed_out',
-          error: portalUserError.message,
-        })
-        return
-      }
-
-      if (!portalUserData) {
-        setState({
-          ...defaultState,
-          status: 'setup',
-          session,
-          authUser: session.user,
-        })
-        return
-      }
-
-      const portalUser = portalUserData as PortalUserRecord
-
-      if (!portalUser.is_active) {
-        setState({
-          ...defaultState,
-          status: 'inactive',
-          session,
-          authUser: session.user,
-          portalUser,
-          error: 'This portal account is inactive.',
-        })
-        return
-      }
-
-      const employeePromise = portalUser.employee_id
-        ? supabase
-            .from('employees')
-            .select(EMPLOYEE_SELECT)
-            .eq('id', portalUser.employee_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null })
-
-      const customerPromise = portalUser.customer_id
-        ? supabase
-            .from('customers')
-            .select(CUSTOMER_SELECT)
-            .eq('id', portalUser.customer_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null })
-
-      const [employeeResult, customerResult] = await Promise.all([
-        employeePromise,
-        customerPromise,
-      ])
-
-      if (!isMounted) {
-        return
-      }
-
-      if (employeeResult.error) {
-        setState({
-          ...defaultState,
-          status: 'setup',
-          session,
-          authUser: session.user,
-          portalUser,
-          error: employeeResult.error.message,
-        })
-        return
-      }
-
-      if (customerResult.error) {
-        setState({
-          ...defaultState,
-          status: 'setup',
-          session,
-          authUser: session.user,
-          portalUser,
-          error: customerResult.error.message,
-        })
-        return
-      }
-
-      const employee = employeeResult.data as EmployeeRecord | null
-      const customer = customerResult.data as CustomerRecord | null
-
-      if (portalUser.permission_level === 'employee' && !employee) {
-        setState({
-          ...defaultState,
-          status: 'setup',
-          session,
-          authUser: session.user,
-          portalUser,
-          error: 'This portal user is missing the linked employee profile.',
-        })
-        return
-      }
-
-      if (portalUser.permission_level === 'customer' && !customer) {
-        setState({
-          ...defaultState,
-          status: 'setup',
-          session,
-          authUser: session.user,
-          portalUser,
-          error: 'This portal user is missing the linked customer profile.',
-        })
-        return
-      }
-
-      const accessLevel = deriveAccessLevel(portalUser, employee)
-
-      setState({
-        status: 'ready',
-        session,
-        authUser: session.user,
-        portalUser,
-        employee,
-        customer,
-        accessLevel,
-        error: null,
-      })
-    }
 
     void supabase.auth.getSession().then(({ data }) => {
       void syncFromSession(data.session)
@@ -299,10 +303,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
 
     return () => {
-      isMounted = false
+      isMountedRef.current = false
       subscriptionData.subscription.unsubscribe()
     }
-  }, [])
+  }, [syncFromSession])
 
   const signInWithPassword = async (email: string, password: string) => {
     if (!isSupabaseConfigured) {
@@ -328,10 +332,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  const refreshAuthState = async () => {
+    if (!isSupabaseConfigured) {
+      return
+    }
+
+    const supabase = getSupabaseClient()
+    const { data } = await supabase.auth.getSession()
+    await syncFromSession(data.session)
+  }
+
   const value: AuthContextValue = {
     ...state,
     signInWithPassword,
     signOut,
+    refreshAuthState,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

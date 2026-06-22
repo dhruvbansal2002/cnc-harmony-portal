@@ -77,8 +77,8 @@ export function Sidebar({
   const containerClasses = mobile
     ? 'flex h-full w-[min(86vw,20rem)] flex-col border-r border-white/10 bg-[#05070a]/95 backdrop-blur-xl'
     : isExpanded
-      ? 'relative hidden h-screen w-80 flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,12,16,0.96)_0%,rgba(5,8,12,0.88)_100%)] backdrop-blur-xl transition-[width] duration-200 lg:flex'
-      : 'relative hidden h-screen w-20 flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,12,16,0.96)_0%,rgba(5,8,12,0.88)_100%)] backdrop-blur-xl transition-[width] duration-200 lg:flex'
+      ? 'sticky top-0 hidden h-dvh w-80 flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,12,16,0.96)_0%,rgba(5,8,12,0.88)_100%)] backdrop-blur-xl transition-[width] duration-200 lg:flex'
+      : 'sticky top-0 hidden h-dvh w-20 flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(8,12,16,0.96)_0%,rgba(5,8,12,0.88)_100%)] backdrop-blur-xl transition-[width] duration-200 lg:flex'
 
   return (
     <aside
@@ -140,7 +140,7 @@ export function Sidebar({
 
       <div
         className={[
-          'flex-1 px-3 py-5',
+          'flex-1 overscroll-contain px-3 py-5',
           isExpanded ? 'overflow-y-auto' : 'overflow-y-auto scrollbar-none',
         ].join(' ')}
       >
@@ -205,7 +205,12 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className={['border-t border-white/10', isExpanded ? 'px-6 py-5' : 'px-3 py-4'].join(' ')}>
+      <div
+        className={[
+          'border-t border-white/10',
+          isExpanded ? 'px-6 py-5' : 'px-3 py-4',
+        ].join(' ')}
+      >
         <div
           className={[
             'rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.02)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',

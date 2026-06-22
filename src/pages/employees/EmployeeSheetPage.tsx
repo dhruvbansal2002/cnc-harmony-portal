@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import type { EmployeeRecord, RankRecord } from '../../auth/types'
 import { ActionMenu } from '../../components/ui/ActionMenu'
+import { EmployeeCsvImport } from '../../components/employees/EmployeeCsvImport'
 import { EmployeeForm } from '../../components/employees/EmployeeForm'
 import { EmployeeTransferForm } from '../../components/employees/EmployeeTransferForm'
 import {
@@ -25,6 +26,10 @@ import {
   transferEmployeeToExEmployee,
   type ExEmployeeTransferValues,
 } from '../../lib/exEmployees'
+import {
+  importEmployeeCsvRows,
+  type EmployeeCsvImportResult,
+} from '../../lib/employeeCsvImport'
 
 const ROWS_PER_PAGE = 20
 
@@ -572,6 +577,7 @@ export function EmployeeSheetPage() {
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [bannerTone, setBannerTone] = useState<'success' | 'error' | null>(null)
   const [createVisible, setCreateVisible] = useState(false)
+  const [importVisible, setImportVisible] = useState(false)
   const [createRevision, setCreateRevision] = useState(0)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createSubmitting, setCreateSubmitting] = useState(false)
@@ -633,6 +639,11 @@ export function EmployeeSheetPage() {
     [rankOptions],
   )
 
+  const existingCitizenIds = useMemo(
+    () => employees.map((employee) => employee.citizen_id),
+    [employees],
+  )
+
   const currentUserLabel =
     accessLevel === 'management'
       ? 'Management access'
@@ -663,6 +674,7 @@ export function EmployeeSheetPage() {
 
   function beginCreate() {
     setCreateVisible(true)
+    setImportVisible(false)
     setEditingEmployeeId(null)
     setTransferEmployeeId(null)
     setEditingError(null)
@@ -674,9 +686,23 @@ export function EmployeeSheetPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function beginImport() {
+    setImportVisible(true)
+    setCreateVisible(false)
+    setEditingEmployeeId(null)
+    setTransferEmployeeId(null)
+    setCreateError(null)
+    setEditingError(null)
+    setTransferError(null)
+    setExpandedEmployeeId(null)
+    setBannerMessage(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function beginEdit(employee: EmployeeRecord) {
     setEditingEmployeeId(employee.id)
     setCreateVisible(false)
+    setImportVisible(false)
     setTransferEmployeeId(null)
     setCreateError(null)
     setEditingError(null)
@@ -693,6 +719,7 @@ export function EmployeeSheetPage() {
   function beginTransfer(employee: EmployeeRecord) {
     setTransferEmployeeId(employee.id)
     setCreateVisible(false)
+    setImportVisible(false)
     setEditingEmployeeId(null)
     setCreateError(null)
     setEditingError(null)
@@ -705,6 +732,10 @@ export function EmployeeSheetPage() {
   function cancelTransfer() {
     setTransferEmployeeId(null)
     setTransferError(null)
+  }
+
+  function cancelImport() {
+    setImportVisible(false)
   }
 
   async function handleCreate(values: EmployeeFormValues) {
@@ -725,6 +756,31 @@ export function EmployeeSheetPage() {
     } finally {
       setCreateSubmitting(false)
     }
+  }
+
+  async function handleCsvImport(rows: Parameters<typeof importEmployeeCsvRows>[0]) {
+    setBannerMessage(null)
+    setCreateError(null)
+    setEditingError(null)
+    setTransferError(null)
+
+    const result: EmployeeCsvImportResult = await importEmployeeCsvRows(rows)
+
+    result.insertedEmployees.forEach((employee) => {
+      syncEmployee(employee)
+    })
+
+    if (result.insertedCount > 0) {
+      setExpandedEmployeeId(result.insertedEmployees[0]?.id ?? null)
+    }
+
+    const tone = result.failedCount > 0 ? 'error' : 'success'
+    showBanner(
+      `Imported ${result.insertedCount} employee${result.insertedCount === 1 ? '' : 's'}; ${result.skippedCount} skipped; ${result.failedCount} failed.`,
+      tone,
+    )
+
+    return result
   }
 
   async function handleEdit(values: EmployeeFormValues) {
@@ -1002,6 +1058,39 @@ export function EmployeeSheetPage() {
 
       {isManagement ? (
         <div className="space-y-4">
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-200/80">
+                  Employee actions
+                </p>
+                <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
+                  Add or import employees
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                  Create a new employee record or import a CSV at the top of the page. Rank
+                  selection and import validation come from the live Supabase data.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900"
+                  onClick={beginImport}
+                  type="button"
+                >
+                  Import CSV
+                </button>
+                <button
+                  className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                  onClick={beginCreate}
+                  type="button"
+                >
+                  Create Employee
+                </button>
+              </div>
+            </div>
+          </div>
+
           {createVisible ? (
             <EmployeeForm
               key={`create-${createRevision}`}
@@ -1019,31 +1108,16 @@ export function EmployeeSheetPage() {
               title="Create Employee"
               variant="panel"
             />
-          ) : (
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-200/80">
-                    Create Employee
-                  </p>
-                  <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
-                    Add a new employee
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                    Open the create form at the top of the page. Rank selection comes from the
-                    live `public.ranks` table.
-                  </p>
-                </div>
-                <button
-                  className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                  onClick={beginCreate}
-                  type="button"
-                >
-                  Create Employee
-                </button>
-              </div>
-            </div>
-          )}
+          ) : null}
+
+          {importVisible ? (
+            <EmployeeCsvImport
+              existingCitizenIds={existingCitizenIds}
+              onClose={cancelImport}
+              onConfirmImport={handleCsvImport}
+              rankOptions={rankOptions}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 text-sm leading-6 text-slate-300 shadow-2xl shadow-cyan-950/20 backdrop-blur">

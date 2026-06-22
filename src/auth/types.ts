@@ -330,4 +330,5 @@ export interface AuthState {
 export interface AuthContextValue extends AuthState {
   signInWithPassword: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  refreshAuthState: () => Promise<void>
 }

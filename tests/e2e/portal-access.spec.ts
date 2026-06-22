@@ -55,9 +55,27 @@ const employeeCredentials = {
 async function clearBrowserState(page: Page) {
   await page.context().clearCookies()
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     localStorage.clear()
     sessionStorage.clear()
+
+    if (typeof indexedDB.databases === 'function') {
+      const databases = await indexedDB.databases()
+
+      await Promise.all(
+        databases.map(
+          (database) =>
+            database.name
+              ? new Promise<void>((resolve) => {
+                  const request = indexedDB.deleteDatabase(database.name as string)
+                  request.onsuccess = () => resolve()
+                  request.onerror = () => resolve()
+                  request.onblocked = () => resolve()
+                })
+              : Promise.resolve(),
+        ),
+      )
+    }
   })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
 }
@@ -240,10 +258,13 @@ async function expectSidebarLinksAbsent(page: Page, linkNames: string[]) {
 
 async function loginAs(page: Page, credentials: { email: string; password: string }) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
-  await page.getByLabel('Email').fill(credentials.email)
+  await page.getByLabel('Staff Email').fill(credentials.email)
   await page.getByLabel('Password').fill(credentials.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page).toHaveURL(/\/dashboard$/)
+  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 15000 })
+  await expect(
+    page.getByRole('heading', { name: /^(Management|Employee) Dashboard$/ }),
+  ).toBeVisible({ timeout: 15000 })
 }
 
 test.describe('public access', () => {
@@ -331,15 +352,16 @@ test.describe('public access', () => {
 
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.getByRole('heading', { name: 'Staff Login' })).toBeVisible()
-    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Create Staff Account' })).toBeVisible()
+    await expect(page.getByLabel('Staff Email')).toBeVisible()
     await expect(page.getByLabel('Password')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 
-    await expect(page.getByLabel('Email')).toBeEnabled()
+    await expect(page.getByLabel('Staff Email')).toBeEnabled()
     await expect(page.getByLabel('Password')).toBeEnabled()
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled()
 
-    await page.getByLabel('Email').fill(managementCredentials.email)
+    await page.getByLabel('Staff Email').fill(managementCredentials.email)
     await page.getByLabel('Password').fill(managementCredentials.password)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
@@ -351,6 +373,21 @@ test.describe('public access', () => {
       requestFailures,
       `Browser request failures: ${requestFailures.join(' | ')}`,
     ).toEqual([])
+  })
+
+  test('staff signup page loads from the login page without creating an account', async ({
+    page,
+  }) => {
+    await clearBrowserState(page)
+    await page.goto('/login', { waitUntil: 'domcontentloaded' })
+
+    await page.getByRole('link', { name: 'Create Staff Account' }).click()
+    await expect(page).toHaveURL(/\/signup$/)
+    await expect(page.getByRole('heading', { name: 'Staff Account Signup' })).toBeVisible()
+    await expect(page.getByLabel('Staff Email')).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Password', exact: true })).toBeVisible()
+    await expect(page.getByLabel('Confirm Password')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Create Staff Account' })).toBeVisible()
   })
 
   test('logged-in staff always land on the dashboard from public entry points', async ({
