@@ -20,6 +20,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const routeState = location.state as
+    | { portalAuthMessage?: string | null }
+    | null
+    | undefined
+  const authMessage = routeState?.portalAuthMessage ?? null
 
   if (hasAuthCallbackParams(location.search, location.hash)) {
     return <Navigate replace to={buildAuthCallbackPath(location.search, location.hash)} />
@@ -101,6 +106,12 @@ export function LoginPage() {
           Use Discord for direct staff sign-in, or use your staff email and password below.
           Discord username or character name is asked only after login if verification is needed.
         </p>
+
+        {authMessage ? (
+          <p className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            {authMessage}
+          </p>
+        ) : null}
 
         <div className="mt-8 space-y-3">
           <DiscordAuthButton loading={loading} onClick={handleDiscordLogin} />

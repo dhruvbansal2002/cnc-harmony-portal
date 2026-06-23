@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { getSupabaseClient } from '../lib/supabase'
 
 function AccessBody() {
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     status,
     error,
@@ -18,18 +19,16 @@ function AccessBody() {
   const [identifier, setIdentifier] = useState('')
   const [loading, setLoading] = useState(false)
   const [verificationError, setVerificationError] = useState<string | null>(null)
+  const routeState = location.state as
+    | { portalAccessMessage?: string | null }
+    | null
+    | undefined
+  const accessMessage = routeState?.portalAccessMessage ?? null
 
   const isEmployeeVerification =
     status === 'setup' &&
     portalUser?.permission_level === 'employee' &&
     portalUser.employee_id === null
-
-  useEffect(() => {
-    if (!import.meta.env.DEV || !session) {
-      return
-    }
-
-  }, [isEmployeeVerification, portalUser?.employee_id, portalUser?.permission_level, session, status])
 
   if (status === 'ready') {
     if (accessLevel === 'management' || accessLevel === 'employee') {
@@ -110,6 +109,12 @@ function AccessBody() {
               no match is found, contact management.
             </p>
 
+            {accessMessage ? (
+              <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                {accessMessage}
+              </p>
+            ) : null}
+
             {verificationError ? (
               <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
                 {verificationError}
@@ -162,6 +167,12 @@ function AccessBody() {
             <p className="font-medium text-slate-100">Portal user record found</p>
             <p className="mt-2 font-mono text-xs text-slate-400">{portalUser.email}</p>
           </div>
+        ) : null}
+
+        {accessMessage ? (
+          <p className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            {accessMessage}
+          </p>
         ) : null}
 
         {error ? (
