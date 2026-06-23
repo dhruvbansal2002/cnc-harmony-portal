@@ -47,3 +47,4 @@ export function PublicLandingRoute() {
 
   return <PublicAnnouncementsPage />
 }
+

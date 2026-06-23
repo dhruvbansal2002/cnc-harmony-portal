@@ -19,3 +19,4 @@ export function RoleLandingRoute() {
 
   return <Navigate replace to={getDefaultPath()} />
 }
+

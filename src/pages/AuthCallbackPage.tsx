@@ -4,6 +4,14 @@ import { useAuth } from '../auth/useAuth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 type CallbackState = 'loading' | 'ready' | 'error'
+const CALLBACK_SESSION_RETRY_ATTEMPTS = 6
+const CALLBACK_SESSION_RETRY_DELAY_MS = 250
+
+function waitForCallbackSessionRetry() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, CALLBACK_SESSION_RETRY_DELAY_MS)
+  })
+}
 
 export function AuthCallbackPage() {
   const { status, session, portalUser, accessLevel, refreshAuthState, error } = useAuth()
@@ -28,6 +36,9 @@ export function AuthCallbackPage() {
         const callbackUrl = new URL(currentUrl)
         const authCode = callbackUrl.searchParams.get('code')
 
+
+        let callbackSession = null
+
         if (authCode) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
             authCode,
@@ -38,7 +49,30 @@ export function AuthCallbackPage() {
           }
         }
 
+        for (let attempt = 0; attempt < CALLBACK_SESSION_RETRY_ATTEMPTS; attempt += 1) {
+          const { data } = await supabase.auth.getSession()
+          callbackSession = data.session
+
+          if (callbackSession) {
+            break
+          }
+
+          if (attempt < CALLBACK_SESSION_RETRY_ATTEMPTS - 1) {
+            await waitForCallbackSessionRetry()
+          }
+        }
+
         await refreshAuthState()
+
+        if (!callbackSession && authCode) {
+          if (active) {
+            setCallbackError(
+              'Discord login succeeded, but portal access row was not created. Contact management.',
+            )
+            setCallbackState('error')
+          }
+          return
+        }
 
         if (active) {
           setCallbackState('ready')
@@ -59,21 +93,6 @@ export function AuthCallbackPage() {
       active = false
     }
   }, [refreshAuthState])
-
-  useEffect(() => {
-    if (!import.meta.env.DEV || status === 'loading') {
-      return
-    }
-
-    console.debug('[AuthCallbackPage]', {
-      authStatus: status,
-      authUserId: session?.user.id ?? null,
-      provider: session?.user.app_metadata?.provider ?? 'unknown',
-      permissionLevel: portalUser?.permission_level ?? null,
-      employeeId: portalUser?.employee_id ? 'linked' : 'missing',
-      accessLevel,
-    })
-  }, [accessLevel, portalUser?.employee_id, portalUser?.permission_level, session, status])
 
   if (callbackState === 'error') {
     return (
@@ -147,3 +166,4 @@ export function AuthCallbackPage() {
     </main>
   )
 }
+

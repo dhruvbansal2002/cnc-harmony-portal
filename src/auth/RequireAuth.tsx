@@ -58,11 +58,11 @@ export function RequireAuth() {
     return <Navigate replace to="/access" />
   }
 
-  return session && accessLevel === 'customer' ? (
-    <Navigate replace to="/access" />
-  ) : (
-    <Outlet />
-  )
+  if (session && accessLevel === 'customer') {
+    return <Navigate replace to="/access" />
+  }
+
+  return <Outlet />
 }
 
 export function RequirePublicOnly({ children }: { children: ReactNode }) {
@@ -89,14 +89,15 @@ export function RequirePublicOnly({ children }: { children: ReactNode }) {
       return <Navigate replace to="/access" />
     }
 
-    return accessLevel === 'management' || accessLevel === 'employee' ? (
-      <Navigate replace to="/dashboard" />
-    ) : (
-      <Navigate replace to="/access" />
-    )
+    if (accessLevel === 'management' || accessLevel === 'employee') {
+      return <Navigate replace to="/dashboard" />
+    }
+
+    return <Navigate replace to="/access" />
   }
 
   return children
 }
 
 export { ScreenMessage }
+

@@ -132,41 +132,6 @@ function isDiscordOAuthUser(sessionUser: Session['user']) {
   return provider === 'discord' || identityProviders?.includes('discord') === true
 }
 
-function getAuthDebugPayload(options: {
-  sessionUser: Session['user']
-  portalUser: PortalUserRecord | null
-  employee: EmployeeRecord | null
-  status: AuthState['status']
-}) {
-  return {
-    authUserId: options.sessionUser.id,
-    provider: options.sessionUser.app_metadata?.provider ?? 'unknown',
-    emailPresent: Boolean(options.sessionUser.email),
-    permissionLevel: options.portalUser?.permission_level ?? null,
-    portalUserEmployeeLink: options.portalUser?.employee_id ? 'linked' : 'missing',
-    employeeLinkStatus: options.employee
-      ? options.employee.status
-      : options.portalUser?.employee_id
-        ? 'missing_employee_row'
-        : 'not_linked',
-    routeDecision:
-      options.status === 'setup'
-        ? 'access'
-        : options.status === 'inactive'
-          ? 'access_or_signout'
-          : options.portalUser?.permission_level === 'management' ||
-              options.portalUser?.permission_level === 'admin'
-            ? 'dashboard'
-            : options.portalUser?.permission_level === 'employee'
-              ? options.portalUser?.employee_id
-                ? 'dashboard'
-                : 'access'
-              : options.portalUser?.permission_level === 'customer'
-                ? 'blocked'
-                : 'unknown',
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isMountedRef = useRef(true)
   const [state, setState] = useState<AuthState>(
@@ -181,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const syncFromSession = useCallback(async (session: Session | null) => {
+
     if (!isMountedRef.current) {
       return
     }
@@ -205,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       return
     }
+
 
     setState((current) => ({
       ...current,
@@ -245,13 +212,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (portalUserError) {
-      if (import.meta.env.DEV) {
-        console.debug('[AuthProvider] portal user lookup failed', {
-          authUserId: session.user.id,
-          provider: session.user.app_metadata?.provider ?? 'unknown',
-          error: portalUserError.message,
-        })
-      }
 
       setState({
         ...defaultState,
@@ -262,13 +222,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (!portalUserData) {
-      if (import.meta.env.DEV) {
-        console.debug('[AuthProvider] portal user missing after retry', {
-          authUserId: session.user.id,
-          provider: session.user.app_metadata?.provider ?? 'unknown',
-          emailPresent: Boolean(session.user.email),
-        })
-      }
 
       setState({
         ...defaultState,
@@ -360,17 +313,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       portalUser.permission_level === 'employee' &&
       (!portalUser.employee_id || !employeeHasActiveLink)
     ) {
-      if (import.meta.env.DEV) {
-        console.debug(
-          '[AuthProvider] employee verification required',
-          getAuthDebugPayload({
-            sessionUser: session.user,
-            portalUser,
-            employee,
-            status: 'setup',
-          }),
-        )
-      }
 
       setState({
         ...defaultState,
@@ -400,17 +342,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const accessLevel = deriveAccessLevel(portalUser, employee)
 
-    if (import.meta.env.DEV) {
-      console.debug(
-        '[AuthProvider] access resolved',
-        getAuthDebugPayload({
-          sessionUser: session.user,
-          portalUser,
-          employee,
-          status: 'ready',
-        }),
-      )
-    }
 
     setState({
       status: 'ready',
@@ -514,3 +445,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
+

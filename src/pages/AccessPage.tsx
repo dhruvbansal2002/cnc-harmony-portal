@@ -29,20 +29,6 @@ function AccessBody() {
       return
     }
 
-    console.debug('[AccessPage]', {
-      authUserId: session.user.id,
-      provider: session.user.app_metadata?.provider ?? 'unknown',
-      emailPresent: Boolean(session.user.email),
-      permissionLevel: portalUser?.permission_level ?? null,
-      employeeId: portalUser?.employee_id ? 'linked' : 'missing',
-      status,
-      routeDecision:
-        isEmployeeVerification || status === 'setup'
-          ? 'access'
-          : status === 'inactive'
-            ? 'blocked'
-            : 'dashboard',
-    })
   }, [isEmployeeVerification, portalUser?.employee_id, portalUser?.permission_level, session, status])
 
   if (status === 'ready') {
@@ -201,3 +187,4 @@ function AccessBody() {
 export function AccessPage() {
   return <AccessBody />
 }
+

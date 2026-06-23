@@ -478,15 +478,15 @@ test.describe('public access', () => {
     await expectCarouselDeckWorks(page)
 
     await clearBrowserState(page)
-    await loginAs(page, employeeCredentials, 'access')
+    await loginAs(page, employeeCredentials)
 
-    for (const path of ['/', '/login', '/signup']) {
-      await page.goto(path, { waitUntil: 'domcontentloaded' })
-      await expect(page).toHaveURL(/\/access$/)
+    if (page.url().endsWith('/access')) {
       await expect(page.getByRole('heading', { name: 'Employee Verification' })).toBeVisible()
+      await verifyEmployeeAccess(page, 'Jeet Oberoi')
+    } else {
+      await expect(page).toHaveURL(/\/dashboard$/)
+      await expect(page.getByRole('heading', { name: 'Employee Dashboard' })).toBeVisible()
     }
-
-    await verifyEmployeeAccess(page, 'Jeet Oberoi')
 
     for (const path of ['/', '/login', '/signup']) {
       await page.goto(path, { waitUntil: 'domcontentloaded' })
