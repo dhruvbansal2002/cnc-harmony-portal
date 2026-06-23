@@ -75,6 +75,8 @@ const CUSTOMER_SELECT = `
   archived_at,
   deleted_at
 `
+const PORTAL_USER_RETRY_ATTEMPTS = 8
+const PORTAL_USER_RETRY_DELAY_MS = 250
 
 const defaultState: AuthState = {
   status: 'loading',
@@ -114,6 +116,12 @@ function deriveAccessLevel(
   return 'employee'
 }
 
+function waitForPortalUserRetry() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, PORTAL_USER_RETRY_DELAY_MS)
+  })
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isMountedRef = useRef(true)
   const [state, setState] = useState<AuthState>(
@@ -150,11 +158,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error: null,
     }))
 
-    const { data: portalUserData, error: portalUserError } = await supabase
-      .from('users')
-      .select(AUTH_USER_SELECT)
-      .eq('id', session.user.id)
-      .maybeSingle()
+    let portalUserData: PortalUserRecord | null = null
+    let portalUserError: { message: string } | null = null
+
+    for (let attempt = 0; attempt < PORTAL_USER_RETRY_ATTEMPTS; attempt += 1) {
+      const { data, error } = await supabase
+        .from('users')
+        .select(AUTH_USER_SELECT)
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      portalUserData = data as PortalUserRecord | null
+      portalUserError = error
+
+      if (!portalUserError && portalUserData) {
+        break
+      }
+
+      if (portalUserError) {
+        break
+      }
+
+      if (attempt < PORTAL_USER_RETRY_ATTEMPTS - 1) {
+        await waitForPortalUserRetry()
+      }
+    }
 
     if (!isMountedRef.current) {
       return
