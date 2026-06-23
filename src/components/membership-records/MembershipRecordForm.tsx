@@ -187,7 +187,7 @@ export function MembershipRecordForm({
   )
 
   return (
-    <form className={`${containerClasses} grid gap-5`} onSubmit={handleSubmit}>
+    <form className={`${containerClasses} grid w-full max-w-full gap-5 overflow-x-hidden`} onSubmit={handleSubmit}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-200/80">
@@ -362,27 +362,27 @@ export function MembershipRecordForm({
                       className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-[minmax(0,1.1fr)_repeat(2,minmax(0,0.7fr))_auto]"
                       key={record.id}
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 break-words">
                         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                           Membership Plan
                         </p>
-                        <p className="mt-2 truncate text-sm font-semibold text-white">
+                        <p className="mt-2 text-sm font-semibold text-white">
                           {record.membership_plan?.plan_name ?? '-'}
                         </p>
                       </div>
-                      <div>
+                      <div className="min-w-0 break-words">
                         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                           Given Date
                         </p>
                         <p className="mt-2 text-sm text-slate-200">{record.given_date ?? '-'}</p>
                       </div>
-                      <div>
+                      <div className="min-w-0 break-words">
                         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                           Expiry Date
                         </p>
                         <p className="mt-2 text-sm text-slate-200">{record.expiry_date ?? '-'}</p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                         <span className="rounded-full border border-white/10 bg-slate-950/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
                           {record.status}
                         </span>

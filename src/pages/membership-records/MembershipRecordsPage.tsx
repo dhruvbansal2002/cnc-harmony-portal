@@ -377,17 +377,8 @@ function MembershipRecordTable({
   onRestore,
   onDelete,
   showArchiveActions = false,
-  editingRecordId,
-  editingRecord,
-  editingError,
-  editingSubmitting,
-  onSubmitEdit,
-  onCancelEdit,
   actionTargetId,
   showActions,
-  customerOptions,
-  membershipPlans,
-  employeeOptions,
 }: {
   title: string
   records: MembershipRecordRecord[]
@@ -400,17 +391,8 @@ function MembershipRecordTable({
   onRestore: (record: MembershipRecordRecord) => void
   onDelete: (record: MembershipRecordRecord) => void
   showArchiveActions?: boolean
-  editingRecordId: string | null
-  editingRecord: MembershipRecordRecord | null
-  editingError: string | null
-  editingSubmitting: boolean
-  onSubmitEdit: (values: MembershipRecordFormValues) => Promise<void>
-  onCancelEdit: () => void
   actionTargetId: string | null
   showActions: boolean
-  customerOptions: CustomerRecord[]
-  membershipPlans: MembershipPlanRecord[]
-  employeeOptions: EmployeeRecord[]
 }) {
   const canManage = accessLevel === 'management'
 
@@ -432,7 +414,7 @@ function MembershipRecordTable({
       </div>
 
       <div className="mt-6 overflow-x-auto">
-        <table className="min-w-[1320px] w-full border-separate border-spacing-0">
+        <table className="w-full table-fixed border-separate border-spacing-0">
           <thead>
             <tr className="text-left text-[0.7rem] uppercase tracking-[0.28em] text-slate-500">
               <th className="border-b border-white/10 px-4 py-3">Customer Name</th>
@@ -457,12 +439,11 @@ function MembershipRecordTable({
             ) : (
               records.map((record) => {
                 const isExpanded = expandedRecordId === record.id
-                const isEditing = editingRecordId === record.id
 
                 return (
                   <Fragment key={record.id}>
                     <tr className="align-top">
-                      <td className="border-b border-white/5 px-4 py-4">
+                      <td className="border-b border-white/5 px-4 py-4 break-words">
                         <button
                           className="text-left text-sm font-semibold text-white transition hover:text-cyan-200"
                           onClick={() => onToggleExpanded(record.id)}
@@ -474,25 +455,25 @@ function MembershipRecordTable({
                           {record.customer_id ? 'Linked profile' : 'Snapshot only'}
                         </p>
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {getMembershipRecordCitizenId(record)}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {record.membership_plan?.plan_name ?? 'Unknown plan'}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {record.issued_by_employee?.character_name ?? 'Unassigned'}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {formatDate(record.given_date)}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {formatDate(record.expiry_date)}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
+                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200 break-words">
                         {boolLabel(record.complimentary_items_given)}
                       </td>
-                      <td className="border-b border-white/5 px-4 py-4">
+                      <td className="border-b border-white/5 px-4 py-4 break-words">
                         <div className="flex flex-wrap gap-2">
                           <MembershipRecordStatusBadge status={record.status} />
                           {isMembershipRecordExpiredByDate(record) ? (
@@ -563,32 +544,10 @@ function MembershipRecordTable({
                       ) : null}
                     </tr>
 
-                    {isExpanded && !isEditing ? (
+                    {isExpanded ? (
                       <tr>
                         <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 9 : 8}>
                           <MembershipRecordDetailPanel record={record} showNotes={accessLevel !== 'customer'} />
-                        </td>
-                      </tr>
-                    ) : null}
-
-                    {isEditing && editingRecord ? (
-                      <tr>
-                        <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 9 : 8}>
-                          <MembershipRecordForm
-                            key={editingRecord.id}
-                            description="Update the membership record in Supabase. Changes save immediately."
-                            error={editingError}
-                            initialValues={membershipRecordToFormValues(editingRecord)}
-                            isSubmitting={editingSubmitting}
-                            customerOptions={customerOptions}
-                            membershipPlans={membershipPlans}
-                            employeeOptions={employeeOptions}
-                            onCancel={onCancelEdit}
-                            onSubmit={onSubmitEdit}
-                            submitLabel="Save changes"
-                            title="Edit membership record"
-                            variant="inline"
-                          />
                         </td>
                       </tr>
                     ) : null}
@@ -609,6 +568,88 @@ function MembershipRecordTable({
   )
 }
 
+function MembershipRecordOverlay({
+  open,
+  title,
+  description,
+  error,
+  initialValues,
+  isSubmitting,
+  customerOptions,
+  membershipPlans,
+  employeeOptions,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  variant,
+}: {
+  open: boolean
+  title: string
+  description: string
+  error: string | null
+  initialValues?: MembershipRecordFormValues
+  isSubmitting: boolean
+  customerOptions: CustomerRecord[]
+  membershipPlans: MembershipPlanRecord[]
+  employeeOptions: EmployeeRecord[]
+  submitLabel: string
+  onSubmit: (values: MembershipRecordFormValues) => Promise<void>
+  onCancel: () => void
+  variant: 'create' | 'inline'
+}) {
+  useEffect(() => {
+    if (!open) {
+      return undefined
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onCancel()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, onCancel])
+
+  if (!open) {
+    return null
+  }
+
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-slate-950/75 px-4 py-6 backdrop-blur-md sm:px-6"
+      onClick={onCancel}
+      role="dialog"
+    >
+      <div className="w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+        <MembershipRecordForm
+          description={description}
+          error={error}
+          initialValues={initialValues}
+          isSubmitting={isSubmitting}
+          customerOptions={customerOptions}
+          membershipPlans={membershipPlans}
+          employeeOptions={employeeOptions}
+          onCancel={onCancel}
+          onSubmit={onSubmit}
+          submitLabel={submitLabel}
+          title={title}
+          variant={variant}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function MembershipRecordsPage() {
   const { accessLevel, authUser, employee, customer } = useAuth()
 
@@ -623,7 +664,6 @@ export function MembershipRecordsPage() {
   const [bannerTone, setBannerTone] = useState<'success' | 'error' | 'warning' | null>(null)
   const [createVisible, setCreateVisible] = useState(false)
   const [importVisible, setImportVisible] = useState(false)
-  const [createRevision, setCreateRevision] = useState(0)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
@@ -833,7 +873,6 @@ export function MembershipRecordsPage() {
     setCreateError(null)
     setEditingError(null)
     setBannerMessage(null)
-    setCreateRevision((current) => current + 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -855,7 +894,6 @@ export function MembershipRecordsPage() {
     setEditingError(null)
     setBannerMessage(null)
     setExpandedRecordId(null)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function cancelEdit() {
@@ -1148,20 +1186,11 @@ export function MembershipRecordsPage() {
         <MembershipRecordTable
           accessLevel="customer"
           actionTargetId={actionTargetId}
-          editingError={editingError}
-          editingRecord={editingRecord}
-          editingRecordId={editingRecordId}
-          editingSubmitting={editingSubmitting}
           expandedRecordId={expandedRecordId}
-          customerOptions={customerOptions}
-          employeeOptions={employeeOptions}
-          membershipPlans={membershipPlanOptions}
           onArchive={handleArchive}
-          onCancelEdit={cancelEdit}
           onDelete={handleDelete}
           onRestore={handleRestore}
           onStartEdit={beginEdit}
-          onSubmitEdit={handleEdit}
           onToggleExpanded={(recordId) =>
             setExpandedRecordId((current) => (current === recordId ? null : recordId))
           }
@@ -1236,23 +1265,6 @@ export function MembershipRecordsPage() {
               Import CSV
             </button>
           </div>
-
-          {createVisible ? (
-            <MembershipRecordForm
-              key={createRevision}
-              description="Create a membership record in Supabase. Use linked customer mode or snapshot-only buyer mode."
-              error={createError}
-              isSubmitting={createSubmitting}
-              customerOptions={customerOptions}
-              membershipPlans={membershipRecordPlanOptions(membershipPlanOptions)}
-              employeeOptions={activeEmployeeOptions}
-              onCancel={cancelCreate}
-              onSubmit={handleCreate}
-              submitLabel="Create Membership Record"
-              title="Create membership record"
-            />
-          ) : null}
-
           {importVisible ? (
             <MembershipRecordCsvImport
               customers={customerOptions}
@@ -1265,6 +1277,37 @@ export function MembershipRecordsPage() {
           ) : null}
         </div>
       ) : null}
+
+      <MembershipRecordOverlay
+        open={createVisible}
+        title="Create membership record"
+        description="Create a membership record in Supabase. Use linked customer mode or snapshot-only buyer mode."
+        error={createError}
+        isSubmitting={createSubmitting}
+        customerOptions={customerOptions}
+        membershipPlans={membershipRecordPlanOptions(membershipPlanOptions)}
+        employeeOptions={activeEmployeeOptions}
+        onCancel={cancelCreate}
+        onSubmit={handleCreate}
+        submitLabel="Create Membership Record"
+        variant="create"
+      />
+
+      <MembershipRecordOverlay
+        open={editingRecord !== null}
+        title="Edit membership record"
+        description="Update the membership record in Supabase. Changes save immediately."
+        error={editingError}
+        initialValues={editingRecord ? membershipRecordToFormValues(editingRecord) : undefined}
+        isSubmitting={editingSubmitting}
+        customerOptions={customerOptions}
+        membershipPlans={membershipRecordPlanOptions(membershipPlanOptions)}
+        employeeOptions={activeEmployeeOptions}
+        onCancel={cancelEdit}
+        onSubmit={handleEdit}
+        submitLabel="Save changes"
+        variant="inline"
+      />
 
       {showManagementControls ? (
         <section className="rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-6">
@@ -1374,21 +1417,12 @@ export function MembershipRecordsPage() {
       <MembershipRecordTable
         accessLevel={activeAccessLevel as 'management' | 'employee'}
         actionTargetId={actionTargetId}
-        editingError={editingError}
-        editingRecord={editingRecord}
-        editingRecordId={editingRecordId}
-        editingSubmitting={editingSubmitting}
         expandedRecordId={expandedRecordId}
-        customerOptions={customerOptions}
-        employeeOptions={employeeOptions}
-        membershipPlans={membershipPlanOptions}
         onArchive={handleArchive}
-        onCancelEdit={cancelEdit}
         onDelete={handleDelete}
         onMarkExpired={handleMarkExpired}
         onRestore={handleRestore}
         onStartEdit={beginEdit}
-        onSubmitEdit={handleEdit}
         onToggleExpanded={(recordId) =>
           setExpandedRecordId((current) => (current === recordId ? null : recordId))
         }
@@ -1427,21 +1461,12 @@ export function MembershipRecordsPage() {
       <MembershipRecordTable
         accessLevel={activeAccessLevel as 'management' | 'employee'}
         actionTargetId={actionTargetId}
-        editingError={editingError}
-        editingRecord={editingRecord}
-        editingRecordId={editingRecordId}
-        editingSubmitting={editingSubmitting}
         expandedRecordId={expandedRecordId}
-        customerOptions={customerOptions}
-        employeeOptions={employeeOptions}
-        membershipPlans={membershipPlanOptions}
         onArchive={handleArchive}
-        onCancelEdit={cancelEdit}
         onDelete={handleDelete}
         onMarkExpired={handleMarkExpired}
         onRestore={handleRestore}
         onStartEdit={beginEdit}
-        onSubmitEdit={handleEdit}
         onToggleExpanded={(recordId) =>
           setExpandedRecordId((current) => (current === recordId ? null : recordId))
         }
@@ -1482,20 +1507,11 @@ export function MembershipRecordsPage() {
           <MembershipRecordTable
             accessLevel="management"
             actionTargetId={actionTargetId}
-            editingError={null}
-            editingRecord={null}
-            editingRecordId={null}
-            editingSubmitting={false}
             expandedRecordId={expandedRecordId}
-            customerOptions={customerOptions}
-            employeeOptions={employeeOptions}
-            membershipPlans={membershipPlanOptions}
             onArchive={handleArchive}
-            onCancelEdit={cancelEdit}
             onDelete={handleDelete}
             onRestore={handleRestore}
             onStartEdit={beginEdit}
-            onSubmitEdit={handleEdit}
             onToggleExpanded={(recordId) =>
               setExpandedRecordId((current) => (current === recordId ? null : recordId))
             }
