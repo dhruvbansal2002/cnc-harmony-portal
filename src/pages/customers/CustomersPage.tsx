@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import type { CustomerRecord } from '../../auth/types'
+import { CustomerCsvImport } from '../../components/customers/CustomerCsvImport'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { CustomerForm } from '../../components/customers/CustomerForm'
 import {
@@ -17,6 +18,7 @@ import {
   updateCustomer,
   type CustomerFormValues,
 } from '../../lib/customers'
+import { importCustomerCsvRows } from '../../lib/customerCsvImport'
 
 const ROWS_PER_PAGE = 20
 
@@ -408,8 +410,9 @@ export function CustomersPage() {
   const [loading, setLoading] = useState(activeAccessLevel !== 'customer')
   const [pageError, setPageError] = useState<string | null>(null)
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
-  const [bannerTone, setBannerTone] = useState<'success' | 'error' | null>(null)
+  const [bannerTone, setBannerTone] = useState<'success' | 'error' | 'warning' | null>(null)
   const [createVisible, setCreateVisible] = useState(false)
+  const [importVisible, setImportVisible] = useState(false)
   const [createRevision, setCreateRevision] = useState(0)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createSubmitting, setCreateSubmitting] = useState(false)
@@ -470,6 +473,10 @@ export function CustomersPage() {
     authEmail: authUser?.email,
     characterName: customer?.character_name ?? null,
   })
+  const existingCitizenIds = useMemo(
+    () => customers.map((record) => record.citizen_id),
+    [customers],
+  )
   const searchTerm = searchQuery.trim().toLowerCase()
 
   const currentCustomers = sortCurrentCustomers(customers).filter((record) => {
@@ -504,7 +511,7 @@ export function CustomersPage() {
   const editingCustomer =
     editingCustomerId === null ? null : customers.find((record) => record.id === editingCustomerId) ?? null
 
-  function showBanner(message: string, tone: 'success' | 'error') {
+  function showBanner(message: string, tone: 'success' | 'error' | 'warning') {
     setBannerMessage(message)
     setBannerTone(tone)
   }
@@ -525,6 +532,7 @@ export function CustomersPage() {
 
   function beginCreate() {
     setCreateVisible(true)
+    setImportVisible(false)
     setEditingCustomerId(null)
     setCreateError(null)
     setEditingError(null)
@@ -536,6 +544,7 @@ export function CustomersPage() {
   function beginEdit(record: CustomerRecord) {
     setEditingCustomerId(record.id)
     setCreateVisible(false)
+    setImportVisible(false)
     setCreateError(null)
     setEditingError(null)
     setBannerMessage(null)
@@ -551,6 +560,20 @@ export function CustomersPage() {
   function cancelCreate() {
     setCreateVisible(false)
     setCreateError(null)
+  }
+
+  function beginImport() {
+    setImportVisible(true)
+    setCreateVisible(false)
+    setEditingCustomerId(null)
+    setCreateError(null)
+    setEditingError(null)
+    setBannerMessage(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelImport() {
+    setImportVisible(false)
   }
 
   async function handleCreate(values: CustomerFormValues) {
@@ -571,6 +594,29 @@ export function CustomersPage() {
     } finally {
       setCreateSubmitting(false)
     }
+  }
+
+  async function handleCsvImport(rows: Parameters<typeof importCustomerCsvRows>[0]) {
+    setBannerMessage(null)
+
+    const result = await importCustomerCsvRows(rows)
+
+    result.insertedCustomers.forEach((record) => {
+      syncCustomer(record)
+    })
+
+    if (result.insertedCount > 0) {
+      setExpandedCustomerId(result.insertedCustomers[0]?.id ?? null)
+    }
+
+    setImportVisible(false)
+
+    showBanner(
+      `Imported ${result.insertedCount} customer${result.insertedCount === 1 ? '' : 's'}; ${result.skippedCount} skipped; ${result.failedCount} failed.`,
+      result.failedCount > 0 ? 'warning' : 'success',
+    )
+
+    return result
   }
 
   async function handleEdit(values: CustomerFormValues) {
@@ -774,6 +820,8 @@ export function CustomersPage() {
             'rounded-2xl border px-4 py-3 text-sm',
             bannerTone === 'success'
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+              : bannerTone === 'warning'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
               : 'border-rose-500/30 bg-rose-500/10 text-rose-100',
           ].join(' ')}
         >
@@ -782,28 +830,45 @@ export function CustomersPage() {
       ) : null}
 
       {canManage ? (
-        createVisible ? (
-          <CustomerForm
-            key={createRevision}
-            description="Create a customer profile in Supabase. Citizen ID is unique when enforced by the database."
-            error={createError}
-            isSubmitting={createSubmitting}
-            onCancel={cancelCreate}
-            onSubmit={handleCreate}
-            submitLabel="Create Customer"
-            title="Create customer"
-          />
-        ) : (
-          <div className="flex justify-end">
+        <div className="space-y-4">
+          <div className="flex flex-wrap justify-end gap-3">
             <button
-              className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900"
               onClick={beginCreate}
               type="button"
             >
               Create Customer
             </button>
+            <button
+              className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              onClick={beginImport}
+              type="button"
+            >
+              Import CSV
+            </button>
           </div>
-        )
+
+          {createVisible ? (
+            <CustomerForm
+              key={createRevision}
+              description="Create a customer profile in Supabase. Citizen ID is unique when enforced by the database."
+              error={createError}
+              isSubmitting={createSubmitting}
+              onCancel={cancelCreate}
+              onSubmit={handleCreate}
+              submitLabel="Create Customer"
+              title="Create customer"
+            />
+          ) : null}
+
+          {importVisible ? (
+            <CustomerCsvImport
+              existingCitizenIds={existingCitizenIds}
+              onClose={cancelImport}
+              onConfirmImport={handleCsvImport}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <section className="rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-6">

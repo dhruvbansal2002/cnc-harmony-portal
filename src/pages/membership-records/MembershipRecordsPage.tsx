@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import type {
@@ -8,6 +8,7 @@ import type {
   MembershipRecordRecord,
   MembershipRecordStatus,
 } from '../../auth/types'
+import { MembershipRecordCsvImport } from '../../components/membership-records/MembershipRecordCsvImport'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import { MembershipRecordForm } from '../../components/membership-records/MembershipRecordForm'
 import { fetchCustomers } from '../../lib/customers'
@@ -25,14 +26,17 @@ import {
   membershipRecordEmployeeOptions,
   membershipRecordPlanOptions,
   membershipRecordToFormValues,
+  markExpiredMembershipRecord,
   restoreMembershipRecord,
   softDeleteMembershipRecord,
   sortArchivedMembershipRecordsOnly,
   sortCurrentMembershipRecords,
+  sortExpiredMembershipRecordsOnly,
   sortMembershipRecords,
   updateMembershipRecord,
   type MembershipRecordFormValues,
 } from '../../lib/membershipRecords'
+import { importMembershipRecordCsvRows } from '../../lib/membershipRecordCsvImport'
 
 const ROWS_PER_PAGE = 20
 
@@ -160,6 +164,14 @@ function MembershipRecordStatusBadge({
 
   const badge = toneMap[status]
   return <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
+}
+
+function isMembershipRecordExpiredByDate(record: MembershipRecordRecord) {
+  if (record.status !== 'active' || !record.expiry_date) {
+    return false
+  }
+
+  return record.expiry_date < new Date().toISOString().slice(0, 10)
 }
 
 function CustomerStatusBadge({ status }: { status: CustomerRecord['status'] }) {
@@ -324,9 +336,12 @@ function MembershipRecordDetailPanel({
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
               Status
             </p>
-            <p className="mt-2 text-sm leading-6 text-slate-200">
+            <div className="mt-2 flex flex-wrap gap-2">
               <MembershipRecordStatusBadge status={record.status} />
-            </p>
+              {isMembershipRecordExpiredByDate(record) ? (
+                <StatusBadge tone="warning">Expired</StatusBadge>
+              ) : null}
+            </div>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -358,6 +373,7 @@ function MembershipRecordTable({
   onToggleExpanded,
   onStartEdit,
   onArchive,
+  onMarkExpired,
   onRestore,
   onDelete,
   showArchiveActions = false,
@@ -380,6 +396,7 @@ function MembershipRecordTable({
   onToggleExpanded: (recordId: string) => void
   onStartEdit: (record: MembershipRecordRecord) => void
   onArchive: (record: MembershipRecordRecord) => void
+  onMarkExpired?: (record: MembershipRecordRecord) => void
   onRestore: (record: MembershipRecordRecord) => void
   onDelete: (record: MembershipRecordRecord) => void
   showArchiveActions?: boolean
@@ -480,12 +497,17 @@ function MembershipRecordTable({
                         {boolLabel(record.complimentary_items_given)}
                       </td>
                       <td className="border-b border-white/5 px-4 py-4">
-                        <MembershipRecordStatusBadge status={record.status} />
+                        <div className="flex flex-wrap gap-2">
+                          <MembershipRecordStatusBadge status={record.status} />
+                          {isMembershipRecordExpiredByDate(record) ? (
+                            <StatusBadge tone="warning">Expired</StatusBadge>
+                          ) : null}
+                        </div>
                       </td>
                       {showActions ? (
                         <td className="border-b border-white/5 px-4 py-4">
                           {canManage ? (
-                          <ActionMenu triggerLabel="Actions">
+                            <ActionMenu triggerLabel="Actions">
                                 {!showArchiveActions ? (
                                   <>
                                     <button
@@ -495,6 +517,15 @@ function MembershipRecordTable({
                                     >
                                       Edit
                                     </button>
+                                    {onMarkExpired && record.status !== 'expired' ? (
+                                      <button
+                                        className="block w-full rounded-xl px-3 py-2 text-left text-sm text-amber-100 transition hover:bg-amber-500/10"
+                                        onClick={() => onMarkExpired(record)}
+                                        type="button"
+                                      >
+                                        Mark Expired
+                                      </button>
+                                    ) : null}
                                     <button
                                       className="block w-full rounded-xl px-3 py-2 text-left text-sm text-slate-100 transition hover:bg-white/5"
                                       onClick={() => onArchive(record)}
@@ -593,8 +624,9 @@ export function MembershipRecordsPage() {
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState<string | null>(null)
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
-  const [bannerTone, setBannerTone] = useState<'success' | 'error' | null>(null)
+  const [bannerTone, setBannerTone] = useState<'success' | 'error' | 'warning' | null>(null)
   const [createVisible, setCreateVisible] = useState(false)
+  const [importVisible, setImportVisible] = useState(false)
   const [createRevision, setCreateRevision] = useState(0)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createSubmitting, setCreateSubmitting] = useState(false)
@@ -608,6 +640,7 @@ export function MembershipRecordsPage() {
   const [statusFilter, setStatusFilter] = useState<(typeof statusFilterOptions)[number]['value']>('all')
   const [issuedEmployeeFilter, setIssuedEmployeeFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const [expiredPage, setExpiredPage] = useState(1)
   const [archivePage, setArchivePage] = useState(1)
 
   const showManagementControls = activeAccessLevel !== 'customer'
@@ -703,7 +736,18 @@ export function MembershipRecordsPage() {
   })
   const searchTerm = searchQuery.trim().toLowerCase()
   const activeEmployeeOptions = membershipRecordEmployeeOptions(employeeOptions)
-  const currentMembershipRecords =
+  const existingCompositeKeys = useMemo(
+    () =>
+      membershipRecords.map((record) =>
+        [
+          getMembershipRecordDisplayName(record).trim().toLowerCase(),
+          record.membership_plan?.plan_name?.trim().toLowerCase() ?? '',
+          record.given_date.trim().toLowerCase(),
+        ].join('|'),
+      ),
+    [membershipRecords],
+  )
+  const activeMembershipRecords =
     activeAccessLevel === 'customer'
       ? sortCurrentMembershipRecords(membershipRecords)
       : sortCurrentMembershipRecords(membershipRecords).filter((record) => {
@@ -713,7 +757,24 @@ export function MembershipRecordsPage() {
             (membershipPlanFilter === 'all'
               ? true
               : record.membership_plan_id === membershipPlanFilter) &&
-            (statusFilter === 'all' ? true : record.status === statusFilter) &&
+            (statusFilter === 'all' ? true : statusFilter === record.status) &&
+            (issuedEmployeeFilter === 'all'
+              ? true
+              : record.issued_by_employee_id === issuedEmployeeFilter)
+          )
+        })
+
+  const expiredMembershipRecords =
+    activeAccessLevel === 'customer'
+      ? []
+      : sortExpiredMembershipRecordsOnly(membershipRecords).filter((record) => {
+          const customerName = getMembershipRecordDisplayName(record).toLowerCase()
+          return (
+            customerName.includes(searchTerm) &&
+            (membershipPlanFilter === 'all'
+              ? true
+              : record.membership_plan_id === membershipPlanFilter) &&
+            (statusFilter === 'all' || statusFilter === 'expired') &&
             (issuedEmployeeFilter === 'all'
               ? true
               : record.issued_by_employee_id === issuedEmployeeFilter)
@@ -724,11 +785,18 @@ export function MembershipRecordsPage() {
     (record) => getMembershipRecordDisplayName(record).toLowerCase().includes(searchTerm),
   )
 
-  const currentTotalPages = Math.max(1, Math.ceil(currentMembershipRecords.length / ROWS_PER_PAGE))
-  const currentDisplayPage = Math.min(currentPage, currentTotalPages)
-  const pagedCurrentMembershipRecords = currentMembershipRecords.slice(
-    (currentDisplayPage - 1) * ROWS_PER_PAGE,
-    currentDisplayPage * ROWS_PER_PAGE,
+  const activeTotalPages = Math.max(1, Math.ceil(activeMembershipRecords.length / ROWS_PER_PAGE))
+  const activeDisplayPage = Math.min(currentPage, activeTotalPages)
+  const pagedActiveMembershipRecords = activeMembershipRecords.slice(
+    (activeDisplayPage - 1) * ROWS_PER_PAGE,
+    activeDisplayPage * ROWS_PER_PAGE,
+  )
+
+  const expiredTotalPages = Math.max(1, Math.ceil(expiredMembershipRecords.length / ROWS_PER_PAGE))
+  const expiredDisplayPage = Math.min(expiredPage, expiredTotalPages)
+  const pagedExpiredMembershipRecords = expiredMembershipRecords.slice(
+    (expiredDisplayPage - 1) * ROWS_PER_PAGE,
+    expiredDisplayPage * ROWS_PER_PAGE,
   )
 
   const archiveTotalPages = Math.max(1, Math.ceil(archivedMembershipRecords.length / ROWS_PER_PAGE))
@@ -743,7 +811,7 @@ export function MembershipRecordsPage() {
       ? null
       : membershipRecords.find((record) => record.id === editingRecordId) ?? null
 
-  function showBanner(message: string, tone: 'success' | 'error') {
+  function showBanner(message: string, tone: 'success' | 'error' | 'warning') {
     setBannerMessage(message)
     setBannerTone(tone)
   }
@@ -764,6 +832,7 @@ export function MembershipRecordsPage() {
 
   function beginCreate() {
     setCreateVisible(true)
+    setImportVisible(false)
     setEditingRecordId(null)
     setCreateError(null)
     setEditingError(null)
@@ -772,9 +841,20 @@ export function MembershipRecordsPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function beginImport() {
+    setImportVisible(true)
+    setCreateVisible(false)
+    setEditingRecordId(null)
+    setCreateError(null)
+    setEditingError(null)
+    setBannerMessage(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function beginEdit(record: MembershipRecordRecord) {
     setEditingRecordId(record.id)
     setCreateVisible(false)
+    setImportVisible(false)
     setCreateError(null)
     setEditingError(null)
     setBannerMessage(null)
@@ -790,6 +870,10 @@ export function MembershipRecordsPage() {
   function cancelCreate() {
     setCreateVisible(false)
     setCreateError(null)
+  }
+
+  function cancelImport() {
+    setImportVisible(false)
   }
 
   async function handleCreate(values: MembershipRecordFormValues) {
@@ -813,9 +897,68 @@ export function MembershipRecordsPage() {
     }
   }
 
+  async function handleCsvImport(
+    rows: Parameters<typeof importMembershipRecordCsvRows>[0],
+  ) {
+    setBannerMessage(null)
+
+    const result = await importMembershipRecordCsvRows(rows)
+
+    result.insertedMembershipRecords.forEach((membershipRecord) => {
+      syncRecord(membershipRecord)
+    })
+
+    if (result.insertedCount > 0) {
+      setExpandedRecordId(result.insertedMembershipRecords[0]?.id ?? null)
+    }
+
+    setImportVisible(false)
+
+    showBanner(
+      `Imported ${result.insertedCount} membership record${result.insertedCount === 1 ? '' : 's'}; ${result.skippedCount} skipped; ${result.failedCount} failed.`,
+      result.failedCount > 0 ? 'warning' : 'success',
+    )
+
+    return result
+  }
+
   async function handleEdit(values: MembershipRecordFormValues) {
     if (!editingRecordId) {
       return
+    }
+
+    const currentLinkedCitizenId =
+      editingRecord?.customer?.citizen_id ?? editingRecord?.customer_citizen_id ?? ''
+
+    if (
+      editingRecord?.customer_id &&
+      values.customer_mode === 'linked' &&
+      values.customer_id &&
+      values.customer_id !== editingRecord.customer_id
+    ) {
+      const confirmed = window.confirm(
+        'Change the linked customer for this membership record?',
+      )
+
+      if (!confirmed) {
+        return
+      }
+    }
+
+    if (
+      editingRecord?.customer_id &&
+      values.customer_mode === 'snapshot' &&
+      values.customer_citizen_id.trim() &&
+      currentLinkedCitizenId.trim() &&
+      values.customer_citizen_id.trim() !== currentLinkedCitizenId.trim()
+    ) {
+      const confirmed = window.confirm(
+        'This will link or create a different customer record. Continue?',
+      )
+
+      if (!confirmed) {
+        return
+      }
     }
 
     setEditingSubmitting(true)
@@ -852,6 +995,28 @@ export function MembershipRecordsPage() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to archive membership record.'
+      showBanner(message, 'error')
+    } finally {
+      setActionTargetId(null)
+    }
+  }
+
+  async function handleMarkExpired(record: MembershipRecordRecord) {
+    const confirmed = window.confirm('Mark this membership record as expired?')
+    if (!confirmed) {
+      return
+    }
+
+    setActionTargetId(record.id)
+    setBannerMessage(null)
+
+    try {
+      const updated = await markExpiredMembershipRecord(record.id)
+      syncRecord(updated)
+      showBanner('Marked membership record as expired.', 'success')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to mark membership record as expired.'
       showBanner(message, 'error')
     } finally {
       setActionTargetId(null)
@@ -985,26 +1150,26 @@ export function MembershipRecordsPage() {
         </div>
 
         <MembershipRecordTable
-        accessLevel="customer"
-        actionTargetId={actionTargetId}
-        editingError={editingError}
-        editingRecord={editingRecord}
-        editingRecordId={editingRecordId}
-        editingSubmitting={editingSubmitting}
-        expandedRecordId={expandedRecordId}
-        customerOptions={customerOptions}
-        employeeOptions={employeeOptions}
-        membershipPlans={membershipPlanOptions}
-        onArchive={handleArchive}
-        onCancelEdit={cancelEdit}
-        onDelete={handleDelete}
+          accessLevel="customer"
+          actionTargetId={actionTargetId}
+          editingError={editingError}
+          editingRecord={editingRecord}
+          editingRecordId={editingRecordId}
+          editingSubmitting={editingSubmitting}
+          expandedRecordId={expandedRecordId}
+          customerOptions={customerOptions}
+          employeeOptions={employeeOptions}
+          membershipPlans={membershipPlanOptions}
+          onArchive={handleArchive}
+          onCancelEdit={cancelEdit}
+          onDelete={handleDelete}
           onRestore={handleRestore}
           onStartEdit={beginEdit}
           onSubmitEdit={handleEdit}
           onToggleExpanded={(recordId) =>
             setExpandedRecordId((current) => (current === recordId ? null : recordId))
           }
-          records={pagedCurrentMembershipRecords}
+          records={pagedActiveMembershipRecords}
           showActions={false}
           title="Current membership records"
         />
@@ -1030,7 +1195,8 @@ export function MembershipRecordsPage() {
           </div>
 
           <div className="grid gap-3 sm:text-right">
-            <FieldPill enabled={false}>{currentMembershipRecords.length} current</FieldPill>
+            <FieldPill enabled={false}>{activeMembershipRecords.length} active</FieldPill>
+            <FieldPill enabled={false}>{expiredMembershipRecords.length} expired</FieldPill>
             {canManage ? (
               <FieldPill enabled={false}>{archivedMembershipRecords.length} archived</FieldPill>
             ) : (
@@ -1047,6 +1213,8 @@ export function MembershipRecordsPage() {
             'rounded-2xl border px-4 py-3 text-sm',
             bannerTone === 'success'
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+              : bannerTone === 'warning'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
               : 'border-rose-500/30 bg-rose-500/10 text-rose-100',
           ].join(' ')}
         >
@@ -1055,31 +1223,51 @@ export function MembershipRecordsPage() {
       ) : null}
 
       {canManage ? (
-        createVisible ? (
-          <MembershipRecordForm
-            key={createRevision}
-            description="Create a membership record in Supabase. Use linked customer mode or snapshot-only buyer mode."
-            error={createError}
-            isSubmitting={createSubmitting}
-            customerOptions={customerOptions}
-            membershipPlans={membershipRecordPlanOptions(membershipPlanOptions)}
-            employeeOptions={activeEmployeeOptions}
-            onCancel={cancelCreate}
-            onSubmit={handleCreate}
-            submitLabel="Create Membership Record"
-            title="Create membership record"
-          />
-        ) : (
-          <div className="flex justify-end">
+        <div className="space-y-4">
+          <div className="flex flex-wrap justify-end gap-3">
             <button
-              className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900"
               onClick={beginCreate}
               type="button"
             >
               Create Membership Record
             </button>
+            <button
+              className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              onClick={beginImport}
+              type="button"
+            >
+              Import CSV
+            </button>
           </div>
-        )
+
+          {createVisible ? (
+            <MembershipRecordForm
+              key={createRevision}
+              description="Create a membership record in Supabase. Use linked customer mode or snapshot-only buyer mode."
+              error={createError}
+              isSubmitting={createSubmitting}
+              customerOptions={customerOptions}
+              membershipPlans={membershipRecordPlanOptions(membershipPlanOptions)}
+              employeeOptions={activeEmployeeOptions}
+              onCancel={cancelCreate}
+              onSubmit={handleCreate}
+              submitLabel="Create Membership Record"
+              title="Create membership record"
+            />
+          ) : null}
+
+          {importVisible ? (
+            <MembershipRecordCsvImport
+              customers={customerOptions}
+              employees={employeeOptions}
+              existingCompositeKeys={existingCompositeKeys}
+              membershipPlans={membershipPlanOptions}
+              onClose={cancelImport}
+              onConfirmImport={handleCsvImport}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {showManagementControls ? (
@@ -1094,7 +1282,7 @@ export function MembershipRecordsPage() {
               </h2>
             </div>
             <div className="text-sm text-slate-400">
-              Showing page {currentDisplayPage} of {currentTotalPages}
+              Showing page {activeDisplayPage} of {activeTotalPages}
             </div>
           </div>
 
@@ -1108,6 +1296,7 @@ export function MembershipRecordsPage() {
                 onChange={(event) => {
                   setSearchQuery(event.target.value)
                   setCurrentPage(1)
+                  setExpiredPage(1)
                   setArchivePage(1)
                 }}
                 placeholder="Search membership records"
@@ -1124,6 +1313,7 @@ export function MembershipRecordsPage() {
                 onChange={(event) => {
                   setMembershipPlanFilter(event.target.value)
                   setCurrentPage(1)
+                  setExpiredPage(1)
                   setArchivePage(1)
                 }}
                 value={membershipPlanFilter}
@@ -1148,6 +1338,7 @@ export function MembershipRecordsPage() {
                     event.target.value as (typeof statusFilterOptions)[number]['value'],
                   )
                   setCurrentPage(1)
+                  setExpiredPage(1)
                 }}
                 value={statusFilter}
               >
@@ -1168,6 +1359,7 @@ export function MembershipRecordsPage() {
                 onChange={(event) => {
                   setIssuedEmployeeFilter(event.target.value)
                   setCurrentPage(1)
+                  setExpiredPage(1)
                 }}
                 value={issuedEmployeeFilter}
               >
@@ -1197,28 +1389,29 @@ export function MembershipRecordsPage() {
         onArchive={handleArchive}
         onCancelEdit={cancelEdit}
         onDelete={handleDelete}
+        onMarkExpired={handleMarkExpired}
         onRestore={handleRestore}
         onStartEdit={beginEdit}
         onSubmitEdit={handleEdit}
         onToggleExpanded={(recordId) =>
           setExpandedRecordId((current) => (current === recordId ? null : recordId))
         }
-        records={pagedCurrentMembershipRecords}
+        records={pagedActiveMembershipRecords}
         showActions={canManage}
         showArchiveActions={false}
-        title={activeAccessLevel === 'management' ? 'Current membership records' : 'Current records'}
+        title="Active membership records"
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-400">
-          {currentMembershipRecords.length === 0
-            ? 'No current membership records match the active filters.'
-            : `Showing ${Math.min((currentDisplayPage - 1) * ROWS_PER_PAGE + 1, currentMembershipRecords.length)} to ${Math.min(currentDisplayPage * ROWS_PER_PAGE, currentMembershipRecords.length)} of ${currentMembershipRecords.length}.`}
+          {activeMembershipRecords.length === 0
+            ? 'No active membership records match the active filters.'
+            : `Showing ${Math.min((activeDisplayPage - 1) * ROWS_PER_PAGE + 1, activeMembershipRecords.length)} to ${Math.min(activeDisplayPage * ROWS_PER_PAGE, activeMembershipRecords.length)} of ${activeMembershipRecords.length}.`}
         </p>
         <div className="flex items-center gap-2">
           <button
             className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={currentDisplayPage <= 1}
+            disabled={activeDisplayPage <= 1}
             onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
             type="button"
           >
@@ -1226,8 +1419,61 @@ export function MembershipRecordsPage() {
           </button>
           <button
             className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={currentDisplayPage >= currentTotalPages}
-            onClick={() => setCurrentPage((current) => Math.min(currentTotalPages, current + 1))}
+            disabled={activeDisplayPage >= activeTotalPages}
+            onClick={() => setCurrentPage((current) => Math.min(activeTotalPages, current + 1))}
+            type="button"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <MembershipRecordTable
+        accessLevel={activeAccessLevel as 'management' | 'employee'}
+        actionTargetId={actionTargetId}
+        editingError={editingError}
+        editingRecord={editingRecord}
+        editingRecordId={editingRecordId}
+        editingSubmitting={editingSubmitting}
+        expandedRecordId={expandedRecordId}
+        customerOptions={customerOptions}
+        employeeOptions={employeeOptions}
+        membershipPlans={membershipPlanOptions}
+        onArchive={handleArchive}
+        onCancelEdit={cancelEdit}
+        onDelete={handleDelete}
+        onMarkExpired={handleMarkExpired}
+        onRestore={handleRestore}
+        onStartEdit={beginEdit}
+        onSubmitEdit={handleEdit}
+        onToggleExpanded={(recordId) =>
+          setExpandedRecordId((current) => (current === recordId ? null : recordId))
+        }
+        records={pagedExpiredMembershipRecords}
+        showActions={canManage}
+        showArchiveActions={false}
+        title="Expired membership records"
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-400">
+          {expiredMembershipRecords.length === 0
+            ? 'No expired membership records match the active filters.'
+            : `Showing ${Math.min((expiredDisplayPage - 1) * ROWS_PER_PAGE + 1, expiredMembershipRecords.length)} to ${Math.min(expiredDisplayPage * ROWS_PER_PAGE, expiredMembershipRecords.length)} of ${expiredMembershipRecords.length}.`}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={expiredDisplayPage <= 1}
+            onClick={() => setExpiredPage((current) => Math.max(1, current - 1))}
+            type="button"
+          >
+            Previous
+          </button>
+          <button
+            className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={expiredDisplayPage >= expiredTotalPages}
+            onClick={() => setExpiredPage((current) => Math.min(expiredTotalPages, current + 1))}
             type="button"
           >
             Next

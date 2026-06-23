@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { CustomerRecord, EmployeeRecord, MembershipPlanRecord } from '../../auth/types'
+import type {
+  CustomerRecord,
+  EmployeeRecord,
+  MembershipPlanRecord,
+  MembershipRecordRecord,
+} from '../../auth/types'
 import {
   createEmptyMembershipRecordFormValues,
+  addDaysToIsoDate,
+  fetchMembershipRecordHistory,
+  isMembershipRecordExpiredByDate,
   membershipRecordCustomerOptions,
   membershipRecordToCustomerSnapshot,
   type MembershipRecordFormValues,
@@ -38,6 +46,9 @@ export function MembershipRecordForm({
   const [values, setValues] = useState<MembershipRecordFormValues>(
     initialValues ?? createEmptyMembershipRecordFormValues(),
   )
+  const [historyRecords, setHistoryRecords] = useState<MembershipRecordRecord[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -50,6 +61,35 @@ export function MembershipRecordForm({
       customer_mode: mode,
       customer_id: mode === 'linked' ? current.customer_id : '',
     }))
+  }
+
+  function handleGivenDateChange(givenDate: string) {
+    setValues((current) => {
+      const normalizedGivenDate = givenDate.trim() || new Date().toISOString().slice(0, 10)
+
+      return {
+        ...current,
+        given_date: normalizedGivenDate,
+        expiry_date: current.expiry_auto_28_days
+          ? addDaysToIsoDate(normalizedGivenDate, 28)
+          : current.expiry_date,
+      }
+    })
+  }
+
+  function handleExpiryAutoToggle(enabled: boolean) {
+    setValues((current) => {
+      const normalizedGivenDate = current.given_date.trim() || new Date().toISOString().slice(0, 10)
+
+      return {
+        ...current,
+        expiry_auto_28_days: enabled,
+        given_date: normalizedGivenDate,
+        expiry_date: enabled
+          ? addDaysToIsoDate(normalizedGivenDate, 28)
+          : current.expiry_date,
+      }
+    })
   }
 
   function handleCustomerChange(customerId: string) {
@@ -80,12 +120,71 @@ export function MembershipRecordForm({
     }))
   }
 
+  useEffect(() => {
+    const linkedCustomerId = values.customer_mode === 'linked' ? values.customer_id.trim() : ''
+    const snapshotCitizenId =
+      values.customer_mode === 'snapshot' ? values.customer_citizen_id.trim() : ''
+    const historyCustomerId = linkedCustomerId || null
+    const historyCustomerCitizenId = !linkedCustomerId && snapshotCitizenId ? snapshotCitizenId : null
+
+    if (!historyCustomerId && !historyCustomerCitizenId) {
+      return
+    }
+
+    let active = true
+
+    const timer = window.setTimeout(async () => {
+      setHistoryLoading(true)
+      setHistoryError(null)
+
+      try {
+        const records = await fetchMembershipRecordHistory({
+          customerId: historyCustomerId,
+          customerCitizenId: historyCustomerCitizenId,
+        })
+
+        if (active) {
+          setHistoryRecords(records)
+        }
+      } catch (error) {
+        if (active) {
+          setHistoryRecords([])
+          setHistoryError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to load previous membership history.',
+          )
+        }
+      } finally {
+        if (active) {
+          setHistoryLoading(false)
+        }
+      }
+    }, 250)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [values.customer_citizen_id, values.customer_id, values.customer_mode])
+
   const containerClasses =
     variant === 'inline'
       ? 'rounded-[1.75rem] border border-white/10 bg-slate-950/70 p-4 sm:p-5'
       : 'rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-6'
 
   const currentCustomerList = membershipRecordCustomerOptions(customerOptions, values.customer_id)
+  const showHistoryPanel =
+    (values.customer_mode === 'linked' && values.customer_id.trim().length > 0) ||
+    (values.customer_mode === 'snapshot' && values.customer_citizen_id.trim().length > 0)
+  const hasActiveMembershipHistory = historyRecords.some(
+    (record) => record.status === 'active' && !isMembershipRecordExpiredByDate(record),
+  )
+  const hasExpiredMembershipHistory = historyRecords.some(
+    (record) =>
+      record.status === 'expired' ||
+      isMembershipRecordExpiredByDate(record),
+  )
 
   return (
     <form className={`${containerClasses} grid gap-5`} onSubmit={handleSubmit}>
@@ -176,6 +275,11 @@ export function MembershipRecordForm({
             }
             value={values.customer_citizen_id}
           />
+          {values.customer_mode === 'snapshot' ? (
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Citizen ID is needed to save this buyer into Customers.
+            </p>
+          ) : null}
         </label>
 
         <label className="block">
@@ -209,6 +313,97 @@ export function MembershipRecordForm({
             value={values.customer_discord_username}
           />
         </label>
+
+        {showHistoryPanel ? (
+          <section className="grid gap-4 rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-4 lg:col-span-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-200/80">
+                  Previous Membership History
+                </p>
+                <h3 className="mt-2 text-sm font-semibold text-white">
+                  Membership history lookup for this customer
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  This check is read-only and does not block new membership creation.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
+                  {historyRecords.length} records
+                </span>
+                {hasExpiredMembershipHistory ? (
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100">
+                    Has previous expired membership
+                  </span>
+                ) : null}
+                {hasActiveMembershipHistory ? (
+                  <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-100">
+                    May already have an active membership
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            {historyLoading ? (
+              <p className="text-sm text-slate-400">Loading previous membership history...</p>
+            ) : historyError ? (
+              <p className="text-sm text-rose-100">{historyError}</p>
+            ) : historyRecords.length === 0 ? (
+              <p className="text-sm text-slate-400">No previous membership history found.</p>
+            ) : (
+              <div className="grid gap-3">
+                {historyRecords.map((record) => {
+                  const expiredByDate = isMembershipRecordExpiredByDate(record)
+
+                  return (
+                    <article
+                      className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-[minmax(0,1.1fr)_repeat(2,minmax(0,0.7fr))_auto]"
+                      key={record.id}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Membership Plan
+                        </p>
+                        <p className="mt-2 truncate text-sm font-semibold text-white">
+                          {record.membership_plan?.plan_name ?? '-'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Given Date
+                        </p>
+                        <p className="mt-2 text-sm text-slate-200">{record.given_date ?? '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Expiry Date
+                        </p>
+                        <p className="mt-2 text-sm text-slate-200">{record.expiry_date ?? '-'}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <span className="rounded-full border border-white/10 bg-slate-950/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
+                          {record.status}
+                        </span>
+                        <span
+                          className={[
+                            'rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]',
+                            expiredByDate
+                              ? 'border border-amber-500/30 bg-amber-500/10 text-amber-100'
+                              : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
+                          ].join(' ')}
+                        >
+                          {expiredByDate ? 'Expired by date' : 'Not expired by date'}
+                        </span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        ) : null}
 
         <label className="block lg:col-span-2">
           <span className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -258,27 +453,44 @@ export function MembershipRecordForm({
           </span>
           <input
             className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50"
-            onChange={(event) =>
-              setValues((current) => ({ ...current, given_date: event.target.value }))
-            }
+            onChange={(event) => handleGivenDateChange(event.target.value)}
             type="date"
             value={values.given_date}
           />
         </label>
 
-        <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-            Expiry Date
-          </span>
-          <input
-            className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50"
-            onChange={(event) =>
-              setValues((current) => ({ ...current, expiry_date: event.target.value }))
-            }
-            type="date"
-            value={values.expiry_date}
-          />
-        </label>
+        <div className="grid gap-3 lg:col-span-2">
+          <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100">
+            <input
+              checked={values.expiry_auto_28_days}
+              onChange={(event) => handleExpiryAutoToggle(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="grid gap-1">
+              <span className="font-semibold text-slate-100">
+                Set expiry to 28 days after given date
+              </span>
+              <span className="text-xs leading-5 text-slate-500">
+                Uncheck to choose an expiry date manually.
+              </span>
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+              Expiry Date
+            </span>
+            <input
+              className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
+              onChange={(event) =>
+                setValues((current) => ({ ...current, expiry_date: event.target.value }))
+              }
+              disabled={values.expiry_auto_28_days}
+              type="date"
+              value={values.expiry_date}
+            />
+          </label>
+        </div>
 
         <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 lg:col-span-2">
           <input
@@ -350,4 +562,3 @@ export function MembershipRecordForm({
     </form>
   )
 }
-

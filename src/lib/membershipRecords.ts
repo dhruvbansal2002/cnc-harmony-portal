@@ -5,6 +5,7 @@ import type {
   CustomerRecord,
   EmployeeRecord,
 } from '../auth/types'
+import { customerSelect } from './customers'
 import { getSupabaseClient } from './supabase'
 
 export const membershipRecordSelect = `
@@ -73,6 +74,7 @@ export interface MembershipRecordFormValues {
   issued_by_employee_id: string
   given_date: string
   expiry_date: string
+  expiry_auto_28_days: boolean
   complimentary_items_given: boolean
   status: MembershipRecordStatus
   notes: string
@@ -105,6 +107,62 @@ function normalizeOptionalText(value: string) {
 
 function normalizeOptionalDate(value: string) {
   return value.trim() ? value.trim() : null
+}
+
+function normalizeOptionalCustomerText(value: string) {
+  return value.trim() ? value.trim() : null
+}
+
+export function addDaysToIsoDate(dateValue: string, days: number) {
+  if (!dateValue.trim()) {
+    return ''
+  }
+
+  const parsed = new Date(`${dateValue.trim()}T00:00:00Z`)
+
+  if (Number.isNaN(parsed.getTime())) {
+    return ''
+  }
+
+  const next = new Date(parsed)
+  next.setUTCDate(next.getUTCDate() + days)
+
+  return next.toISOString().slice(0, 10)
+}
+
+export function isIsoDateExactlyDaysAfter(
+  startDate: string,
+  endDate: string,
+  days: number,
+) {
+  if (!startDate.trim() || !endDate.trim()) {
+    return false
+  }
+
+  return addDaysToIsoDate(startDate, days) === endDate.trim()
+}
+
+function isExpiredByDate(record: Pick<MembershipRecordRecord, 'expiry_date' | 'status'>) {
+  const today = toIsoToday()
+
+  return (
+    record.status === 'expired' ||
+    (record.expiry_date !== null && record.expiry_date.trim().length > 0 && record.expiry_date < today)
+  )
+}
+
+export function isMembershipRecordExpired(record: MembershipRecordRecord) {
+  return isExpiredByDate(record)
+}
+
+export function isMembershipRecordExpiredByDate(record: Pick<MembershipRecordRecord, 'expiry_date'>) {
+  const today = toIsoToday()
+
+  return record.expiry_date !== null && record.expiry_date.trim().length > 0 && record.expiry_date < today
+}
+
+export function isMembershipRecordCurrent(record: MembershipRecordRecord) {
+  return record.archived_at === null && !isExpiredByDate(record)
 }
 
 function sortByCustomerAndDate(records: MembershipRecordRecord[]) {
@@ -148,7 +206,112 @@ function isArchivedRecord(record: MembershipRecordRecord) {
   return record.archived_at !== null || record.status === 'archived'
 }
 
-function buildPayload(values: MembershipRecordFormValues): MembershipRecordMutationPayload {
+export async function ensureCustomerForMembershipSnapshot(input: {
+  customer_lookup_citizen_id: string
+  customer_citizen_id: string
+  customer_character_name: string
+  customer_phone_number: string
+  customer_discord_username: string
+}) {
+  const supabase = getSupabaseClient()
+
+  const lookupCitizenId = normalizeOptionalText(input.customer_lookup_citizen_id)
+  const snapshotCitizenId = normalizeOptionalText(input.customer_citizen_id)
+  const snapshotCharacterName = input.customer_character_name.trim()
+  const snapshotPhoneNumber = normalizeOptionalCustomerText(input.customer_phone_number)
+  const snapshotDiscordUsername = normalizeOptionalCustomerText(input.customer_discord_username)
+
+  const candidateCitizenIds = [lookupCitizenId, snapshotCitizenId].filter(
+    (value): value is string => Boolean(value),
+  )
+
+  for (const citizenId of candidateCitizenIds) {
+    const { data: existingCustomer, error } = await supabase
+      .from('customers')
+      .select(customerSelect)
+      .eq('citizen_id', citizenId)
+      .maybeSingle()
+    const existingCustomerRecord = existingCustomer as CustomerRecord | null
+
+    if (error) {
+      throw error
+    }
+
+    if (!existingCustomerRecord) {
+      continue
+    }
+
+    const patch: Partial<Pick<CustomerRecord, 'character_name' | 'phone_number' | 'discord_username'>> = {}
+
+    if (
+      snapshotCharacterName &&
+      (!existingCustomerRecord.character_name.trim() ||
+        existingCustomerRecord.character_name.trim() === snapshotCharacterName)
+    ) {
+      patch.character_name = snapshotCharacterName
+    }
+
+    if (
+      snapshotPhoneNumber &&
+      (!existingCustomerRecord.phone_number ||
+        existingCustomerRecord.phone_number.trim().length === 0 ||
+        existingCustomerRecord.phone_number.trim() === snapshotPhoneNumber)
+    ) {
+      patch.phone_number = snapshotPhoneNumber
+    }
+
+    if (
+      snapshotDiscordUsername &&
+      (!existingCustomerRecord.discord_username ||
+        existingCustomerRecord.discord_username.trim().length === 0 ||
+        existingCustomerRecord.discord_username.trim() === snapshotDiscordUsername)
+    ) {
+      patch.discord_username = snapshotDiscordUsername
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const { error: updateError } = await supabase
+        .from('customers')
+        .update(patch as never)
+        .eq('id', existingCustomerRecord.id)
+
+      if (updateError) {
+        throw updateError
+      }
+    }
+
+    return existingCustomerRecord.id
+  }
+
+  if (!snapshotCitizenId) {
+    return null
+  }
+
+  const { data: createdCustomer, error } = await supabase
+    .from('customers')
+    .insert([
+      {
+        character_name: snapshotCharacterName,
+        citizen_id: snapshotCitizenId,
+        phone_number: snapshotPhoneNumber,
+        discord_username: snapshotDiscordUsername,
+        notes: 'Created from membership record',
+        status: 'active',
+        archived_at: null,
+        deleted_at: null,
+      },
+    ] as never[])
+    .select(customerSelect)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return (createdCustomer as CustomerRecord).id
+}
+
+async function buildPayload(values: MembershipRecordFormValues): Promise<MembershipRecordMutationPayload> {
   const customerMode = values.customer_mode
   const customerId = values.customer_id.trim()
   const membershipPlanId = values.membership_plan_id.trim()
@@ -171,12 +334,26 @@ function buildPayload(values: MembershipRecordFormValues): MembershipRecordMutat
     throw new Error('Customer Character Name is required for snapshot-only buyers.')
   }
 
+  const resolvedCustomerId =
+    customerMode === 'linked'
+      ? customerId
+      : await ensureCustomerForMembershipSnapshot({
+          customer_lookup_citizen_id: '',
+          customer_citizen_id: values.customer_citizen_id,
+          customer_character_name: values.customer_character_name,
+          customer_phone_number: values.customer_phone_number,
+          customer_discord_username: values.customer_discord_username,
+        })
+
   return {
-    customer_id: customerMode === 'linked' ? customerId : null,
+    customer_id: resolvedCustomerId,
     membership_plan_id: membershipPlanId,
     issued_by_employee_id: issuedByEmployeeId || null,
     given_date: values.given_date.trim() || toIsoToday(),
-    expiry_date: normalizeOptionalDate(values.expiry_date),
+    expiry_date:
+      values.expiry_auto_28_days && (values.given_date.trim() || toIsoToday())
+        ? addDaysToIsoDate(values.given_date.trim() || toIsoToday(), 28)
+        : normalizeOptionalDate(values.expiry_date),
     complimentary_items_given: values.complimentary_items_given,
     status: values.status,
     notes: normalizeOptionalText(values.notes),
@@ -190,6 +367,8 @@ function buildPayload(values: MembershipRecordFormValues): MembershipRecordMutat
 }
 
 export function createEmptyMembershipRecordFormValues(): MembershipRecordFormValues {
+  const today = toIsoToday()
+
   return {
     customer_mode: 'snapshot',
     customer_id: '',
@@ -199,8 +378,9 @@ export function createEmptyMembershipRecordFormValues(): MembershipRecordFormVal
     customer_discord_username: '',
     membership_plan_id: '',
     issued_by_employee_id: '',
-    given_date: toIsoToday(),
-    expiry_date: '',
+    given_date: today,
+    expiry_date: addDaysToIsoDate(today, 28),
+    expiry_auto_28_days: true,
     complimentary_items_given: false,
     status: 'active',
     notes: '',
@@ -225,6 +405,9 @@ export function membershipRecordToFormValues(
     issued_by_employee_id: membershipRecord.issued_by_employee_id ?? '',
     given_date: membershipRecord.given_date,
     expiry_date: membershipRecord.expiry_date ?? '',
+    expiry_auto_28_days:
+      membershipRecord.expiry_date !== null &&
+      isIsoDateExactlyDaysAfter(membershipRecord.given_date, membershipRecord.expiry_date, 28),
     complimentary_items_given: membershipRecord.complimentary_items_given,
     status: membershipRecord.status,
     notes: membershipRecord.notes ?? '',
@@ -232,14 +415,27 @@ export function membershipRecordToFormValues(
 }
 
 export function sortMembershipRecords(records: MembershipRecordRecord[]) {
-  const current = records.filter((record) => !isArchivedRecord(record))
+  const current = records.filter((record) => isMembershipRecordCurrent(record))
+  const expired = records.filter(
+    (record) => record.archived_at === null && isExpiredByDate(record),
+  )
   const archived = records.filter((record) => isArchivedRecord(record))
 
-  return [...sortByCustomerAndDate(current), ...sortArchivedRecords(archived)]
+  return [
+    ...sortByCustomerAndDate(current),
+    ...sortByCustomerAndDate(expired),
+    ...sortArchivedRecords(archived),
+  ]
 }
 
 export function sortCurrentMembershipRecords(records: MembershipRecordRecord[]) {
-  return sortByCustomerAndDate(records.filter((record) => !isArchivedRecord(record)))
+  return sortByCustomerAndDate(records.filter((record) => isMembershipRecordCurrent(record)))
+}
+
+export function sortExpiredMembershipRecordsOnly(records: MembershipRecordRecord[]) {
+  return sortByCustomerAndDate(
+    records.filter((record) => record.archived_at === null && isExpiredByDate(record)),
+  )
 }
 
 export function sortArchivedMembershipRecordsOnly(records: MembershipRecordRecord[]) {
@@ -299,11 +495,63 @@ export async function fetchMembershipRecordsForCustomer(
   return sortCurrentMembershipRecords((data ?? []) as MembershipRecordRecord[])
 }
 
+export async function fetchMembershipRecordHistory(options: {
+  customerId: string | null
+  customerCitizenId: string | null
+}) {
+  const supabase = getSupabaseClient()
+  const customerId = options.customerId?.trim() ?? ''
+  const customerCitizenId = options.customerCitizenId?.trim() ?? ''
+
+  const query = supabase
+    .from('membership_records')
+    .select(membershipRecordSelect)
+    .is('deleted_at', null)
+    .is('archived_at', null)
+    .in('status', ['active', 'expired', 'cancelled'])
+
+  if (customerId) {
+    const { data, error } = await query.eq('customer_id', customerId)
+
+    if (error) {
+      throw error
+    }
+
+    return sortMembershipRecordHistory((data ?? []) as MembershipRecordRecord[])
+  }
+
+  if (customerCitizenId) {
+    const { data, error } = await query.eq('customer_citizen_id', customerCitizenId)
+
+    if (error) {
+      throw error
+    }
+
+    return sortMembershipRecordHistory((data ?? []) as MembershipRecordRecord[])
+  }
+
+  return []
+}
+
+export function sortMembershipRecordHistory(records: MembershipRecordRecord[]) {
+  return [...records].sort((first, second) => {
+    const firstDate = new Date(second.given_date).getTime()
+    const secondDate = new Date(first.given_date).getTime()
+
+    if (firstDate !== secondDate) {
+      return firstDate - secondDate
+    }
+
+    return new Date(second.updated_at).getTime() - new Date(first.updated_at).getTime()
+  })
+}
+
 export async function createMembershipRecord(values: MembershipRecordFormValues) {
   const supabase = getSupabaseClient()
+  const payload = await buildPayload(values)
   const { data, error } = await supabase
     .from('membership_records')
-    .insert([buildPayload(values)] as never[])
+    .insert([payload] as never[])
     .select(membershipRecordSelect)
     .single()
 
@@ -319,9 +567,10 @@ export async function updateMembershipRecord(
   values: MembershipRecordFormValues,
 ) {
   const supabase = getSupabaseClient()
+  const payload = await buildPayload(values)
   const { data, error } = await supabase
     .from('membership_records')
-    .update(buildPayload(values) as never)
+    .update(payload as never)
     .eq('id', membershipRecordId)
     .select(membershipRecordSelect)
     .single()
@@ -340,6 +589,24 @@ export async function archiveMembershipRecord(membershipRecordId: string) {
     .update({
       archived_at: new Date().toISOString(),
       status: 'archived',
+    } as never)
+    .eq('id', membershipRecordId)
+    .select(membershipRecordSelect)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as MembershipRecordRecord
+}
+
+export async function markExpiredMembershipRecord(membershipRecordId: string) {
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase
+    .from('membership_records')
+    .update({
+      status: 'expired',
     } as never)
     .eq('id', membershipRecordId)
     .select(membershipRecordSelect)

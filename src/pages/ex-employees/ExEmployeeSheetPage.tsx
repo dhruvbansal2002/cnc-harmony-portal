@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import type { ExEmployeeRecord } from '../../auth/types'
+import { ExEmployeeCsvImport } from '../../components/ex-employees/ExEmployeeCsvImport'
 import { ActionMenu } from '../../components/ui/ActionMenu'
 import {
   fetchExEmployees,
@@ -10,6 +11,7 @@ import {
   softDeleteExEmployee,
   sortExEmployees,
 } from '../../lib/exEmployees'
+import { importExEmployeeCsvRows } from '../../lib/exEmployeeCsvImport'
 
 const ROWS_PER_PAGE = 20
 
@@ -458,6 +460,7 @@ export function ExEmployeeSheetPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [bannerTone, setBannerTone] = useState<'success' | 'error' | 'warning' | null>(null)
+  const [importVisible, setImportVisible] = useState(false)
   const [expandedExEmployeeId, setExpandedExEmployeeId] = useState<string | null>(null)
   const [actionTargetId, setActionTargetId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -529,6 +532,11 @@ export function ExEmployeeSheetPage() {
     setExEmployees((current) => current.filter((record) => record.id !== exEmployeeId))
   }
 
+  const existingCitizenIds = useMemo(
+    () => exEmployees.map((exEmployee) => exEmployee.citizen_id),
+    [exEmployees],
+  )
+
   const searchTerm = searchQuery.trim().toLowerCase()
 
   const currentExEmployees = useMemo(
@@ -579,6 +587,31 @@ export function ExEmployeeSheetPage() {
   )
 
   const showRestoredSection = isManagement && restoredExEmployees.length > 0
+
+  async function handleCsvImport(
+    rows: Parameters<typeof importExEmployeeCsvRows>[0],
+  ) {
+    setBannerMessage(null)
+
+    const result = await importExEmployeeCsvRows(rows)
+
+    result.insertedExEmployees.forEach((exEmployee) => {
+      syncExEmployee(exEmployee)
+    })
+
+    if (result.insertedCount > 0) {
+      setExpandedExEmployeeId(result.insertedExEmployees[0]?.id ?? null)
+    }
+
+    setImportVisible(false)
+
+    showBanner(
+      `Imported ${result.insertedCount} ex-employee${result.insertedCount === 1 ? '' : 's'}; ${result.skippedCount} skipped; ${result.failedCount} failed.`,
+      result.failedCount > 0 ? 'warning' : 'success',
+    )
+
+    return result
+  }
 
   if (loading) {
     return (
@@ -654,6 +687,30 @@ export function ExEmployeeSheetPage() {
         >
           {bannerMessage}
         </div>
+      ) : null}
+
+      {isManagement ? (
+        importVisible ? (
+          <ExEmployeeCsvImport
+            existingCitizenIds={existingCitizenIds}
+            onClose={() => setImportVisible(false)}
+            onConfirmImport={handleCsvImport}
+          />
+        ) : (
+          <div className="flex justify-end">
+            <button
+              className="rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              onClick={() => {
+                setImportVisible(true)
+                setBannerMessage(null)
+                setExpandedExEmployeeId(null)
+              }}
+              type="button"
+            >
+              Import CSV
+            </button>
+          </div>
+        )
       ) : null}
 
       <section className="rounded-[2rem] border border-white/10 bg-white/5 p-4 shadow-2xl shadow-cyan-950/20 backdrop-blur sm:p-6">
