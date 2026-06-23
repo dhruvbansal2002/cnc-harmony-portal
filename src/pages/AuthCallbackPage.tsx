@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
 import { useAuth } from '../auth/useAuth'
 import type { EmployeeRecord, PortalUserRecord } from '../auth/types'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
@@ -12,6 +13,7 @@ type CallbackOutcome =
   | { kind: 'error'; message: string }
 
 const CALLBACK_TIMEOUT_MS = 4000
+const CALLBACK_SESSION_WAIT_MS = 7000
 const CALLBACK_RETRY_DELAY_MS = 250
 const AUTH_USER_SELECT = 'id,email,permission_level,is_active,employee_id,customer_id'
 const EMPLOYEE_SELECT = 'id,status,archived_at,deleted_at'
@@ -24,6 +26,46 @@ const DISCORD_SESSION_MISSING_ERROR =
 function waitForCallbackRetry() {
   return new Promise((resolve) => {
     window.setTimeout(resolve, CALLBACK_RETRY_DELAY_MS)
+  })
+}
+
+async function waitForSessionFromAuthState(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  timeoutMs: number,
+): Promise<Session | null> {
+  const deadline = Date.now() + timeoutMs
+
+  const initialSession = await supabase.auth.getSession()
+  if (initialSession.data.session) {
+    return initialSession.data.session
+  }
+
+  return await new Promise((resolve) => {
+    const subscription = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        subscription.data.subscription.unsubscribe()
+        resolve(session)
+      }
+    })
+
+    const poll = async () => {
+      while (Date.now() < deadline) {
+        const { data } = await supabase.auth.getSession()
+
+        if (data.session) {
+          subscription.data.subscription.unsubscribe()
+          resolve(data.session)
+          return
+        }
+
+        await waitForCallbackRetry()
+      }
+
+      subscription.data.subscription.unsubscribe()
+      resolve(null)
+    }
+
+    void poll()
   })
 }
 
@@ -50,26 +92,31 @@ export function AuthCallbackPage() {
         const currentUrl = window.location.href
         const callbackUrl = new URL(currentUrl)
         const authCode = callbackUrl.searchParams.get('code')
-        const deadline = Date.now() + CALLBACK_TIMEOUT_MS
+        const hasOAuthCallbackPayload =
+          callbackUrl.searchParams.has('code') ||
+          callbackUrl.searchParams.has('error') ||
+          callbackUrl.searchParams.has('access_token') ||
+          callbackUrl.searchParams.has('refresh_token') ||
+          callbackUrl.hash.includes('access_token') ||
+          callbackUrl.hash.includes('refresh_token')
 
         if (authCode) {
+          await waitForCallbackRetry()
+        }
+
+        let callbackSession = await waitForSessionFromAuthState(
+          supabase,
+          hasOAuthCallbackPayload ? CALLBACK_SESSION_WAIT_MS : CALLBACK_TIMEOUT_MS,
+        )
+
+        if (!callbackSession && authCode) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode)
 
           if (exchangeError && import.meta.env.DEV) {
             console.warn('[AuthCallbackPage] exchangeCodeForSession failed', exchangeError.message)
           }
-        }
 
-        let callbackSession = null
-        while (Date.now() < deadline) {
-          const { data } = await supabase.auth.getSession()
-          callbackSession = data.session
-
-          if (callbackSession) {
-            break
-          }
-
-          await waitForCallbackRetry()
+          callbackSession = await waitForSessionFromAuthState(supabase, CALLBACK_TIMEOUT_MS)
         }
 
         if (!callbackSession?.user) {
@@ -84,11 +131,12 @@ export function AuthCallbackPage() {
           return
         }
 
-        void refreshAuthState().catch(() => {})
+        await refreshAuthState()
 
         const authUserId = callbackSession.user.id
         let portalUser: PortalUserRecord | null = null
-        while (Date.now() < deadline) {
+        const portalDeadline = Date.now() + CALLBACK_TIMEOUT_MS
+        while (Date.now() < portalDeadline) {
           const { data, error } = await supabase
             .from('users')
             .select(AUTH_USER_SELECT)
@@ -229,7 +277,7 @@ export function AuthCallbackPage() {
   }
 
   if (outcome.kind === 'error') {
-    return (
+        return (
       <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-slate-100">
         <section className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-cyan-950/30 backdrop-blur">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-200/80">
@@ -241,6 +289,14 @@ export function AuthCallbackPage() {
           <p className="mt-3 text-sm leading-6 text-slate-300">
             {outcome.message}
           </p>
+          <div className="mt-6">
+            <Link
+              className="inline-flex rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-900"
+              to="/login"
+            >
+              Back to Staff Login
+            </Link>
+          </div>
         </section>
       </main>
     )

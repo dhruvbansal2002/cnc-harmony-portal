@@ -29,7 +29,7 @@ export function getSupabaseClient() {
   supabaseClient ??= createClient(supabaseConfig.url, supabaseConfig.anonKey, {
     auth: {
       autoRefreshToken: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true,
       persistSession: true,
     },
   })
