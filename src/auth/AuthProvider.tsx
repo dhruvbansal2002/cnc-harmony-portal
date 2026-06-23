@@ -323,6 +323,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const signInWithDiscord = async () => {
+    if (!isSupabaseConfigured) {
+      throw new Error(
+        'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.',
+      )
+    }
+
+    const supabase = getSupabaseClient()
+    const redirectTo = `${window.location.origin}/dashboard`
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: {
+        redirectTo,
+      },
+    })
+
+    if (error) {
+      throw error
+    }
+  }
+
   const signOut = async () => {
     if (!isSupabaseConfigured) {
       return
@@ -345,6 +366,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     ...state,
     signInWithPassword,
+    signInWithDiscord,
     signOut,
     refreshAuthState,
   }

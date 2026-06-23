@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 export function LoginPage() {
-  const { status, session, signInWithPassword, accessLevel } = useAuth()
+  const { status, session, signInWithPassword, signInWithDiscord, accessLevel } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -56,6 +56,22 @@ export function LoginPage() {
     }
   }
 
+  const handleDiscordLogin = async () => {
+    setError(null)
+
+    try {
+      setLoading(true)
+      await signInWithDiscord()
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Discord sign in failed.',
+      )
+      setLoading(false)
+    }
+  }
+
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-slate-100">
       <section className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-cyan-950/30 backdrop-blur">
@@ -64,11 +80,26 @@ export function LoginPage() {
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Staff Login</h1>
         <p className="mt-3 text-sm leading-6 text-slate-300">
-          Sign in with your staff email and password. Discord username or character name is asked
-          only after login if verification is needed.
+          Sign in with your staff email and password, or continue with Discord. Discord username
+          or character name is asked only after login if verification is needed.
         </p>
 
-        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+        <div className="mt-8 space-y-3">
+          <button
+            className="w-full rounded-2xl border border-[#ff8a3d]/30 bg-gradient-to-r from-[#ff8a3d] to-[#ff5a1f] px-4 py-3 text-sm font-semibold text-white transition hover:from-[#ff9e5a] hover:to-[#ff6a2f] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loading}
+            onClick={handleDiscordLogin}
+            type="button"
+          >
+            {loading ? 'Connecting...' : 'Continue with Discord'}
+          </button>
+
+          <p className="text-center text-xs leading-5 text-slate-400">
+            Discord OAuth is for staff access only.
+          </p>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-200">Staff Email</span>
             <input
@@ -106,7 +137,7 @@ export function LoginPage() {
             disabled={loading}
             type="submit"
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? 'Signing in...' : 'Sign in with Email'}
           </button>
         </form>
 
