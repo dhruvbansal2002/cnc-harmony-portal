@@ -77,6 +77,7 @@ const CUSTOMER_SELECT = `
 `
 const PORTAL_USER_RETRY_ATTEMPTS = 8
 const PORTAL_USER_RETRY_DELAY_MS = 250
+const DISCORD_EMAIL_MISSING_ERROR = 'Discord did not provide an email. Contact management.'
 
 const defaultState: AuthState = {
   status: 'loading',
@@ -122,6 +123,13 @@ function waitForPortalUserRetry() {
   })
 }
 
+function isDiscordOAuthUser(sessionUser: Session['user']) {
+  const provider = sessionUser.app_metadata?.provider
+  const identityProviders = sessionUser.identities?.map((identity) => identity.provider)
+
+  return provider === 'discord' || identityProviders?.includes('discord') === true
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isMountedRef = useRef(true)
   const [state, setState] = useState<AuthState>(
@@ -149,6 +157,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const supabase = getSupabaseClient()
+
+    if (isDiscordOAuthUser(session.user) && !session.user.email) {
+      setState({
+        ...defaultState,
+        status: 'setup',
+        session,
+        authUser: session.user,
+        error: DISCORD_EMAIL_MISSING_ERROR,
+      })
+      return
+    }
 
     setState((current) => ({
       ...current,
@@ -203,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: 'setup',
         session,
         authUser: session.user,
+        error: isDiscordOAuthUser(session.user) ? DISCORD_EMAIL_MISSING_ERROR : null,
       })
       return
     }

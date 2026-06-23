@@ -81,8 +81,8 @@ export function LoginPage() {
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Staff Login</h1>
         <p className="mt-3 text-sm leading-6 text-slate-300">
-          Sign in with your staff email and password, or continue with Discord. Discord username
-          or character name is asked only after login if verification is needed.
+          Use Discord for direct staff sign-in, or use your staff email and password below.
+          Discord username or character name is asked only after login if verification is needed.
         </p>
 
         <div className="mt-8 space-y-3">
@@ -91,6 +91,12 @@ export function LoginPage() {
           <p className="text-center text-xs leading-5 text-slate-400">
             Discord OAuth is for staff access only.
           </p>
+        </div>
+
+        <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+          <span className="h-px flex-1 bg-white/10" />
+          <span>Or</span>
+          <span className="h-px flex-1 bg-white/10" />
         </div>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>

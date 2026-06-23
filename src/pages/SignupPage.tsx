@@ -106,9 +106,9 @@ export function SignupPage() {
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Staff Account Signup</h1>
         <p className="mt-3 text-sm leading-6 text-slate-300">
-          Create a staff account with email and password, or use Discord to avoid email
-          confirmation delays. After signup, verify using your Discord username or character name
-          from the Employee Sheet.
+          Use Discord to avoid email confirmation delays, or create a staff account with email and
+          password below. After signup, verify using your Discord username or character name from
+          the Employee Sheet.
         </p>
 
         <div className="mt-8 space-y-3">
@@ -116,6 +116,12 @@ export function SignupPage() {
           <p className="text-center text-xs leading-5 text-slate-400">
             Use Discord to avoid email confirmation delays.
           </p>
+        </div>
+
+        <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+          <span className="h-px flex-1 bg-white/10" />
+          <span>Or</span>
+          <span className="h-px flex-1 bg-white/10" />
         </div>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
