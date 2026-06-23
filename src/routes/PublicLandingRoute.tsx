@@ -1,10 +1,20 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { ScreenMessage } from '../auth/RequireAuth'
+import { buildAuthCallbackPath, hasAuthCallbackParams } from '../auth/oauth'
 import { PublicAnnouncementsPage } from '../pages/public/PublicAnnouncementsPage'
 
 export function PublicLandingRoute() {
+  const currentUrl = typeof window !== 'undefined' ? window.location : null
   const { status, accessLevel, portalUser } = useAuth()
+
+  if (
+    currentUrl &&
+    hasAuthCallbackParams(currentUrl.search, currentUrl.hash) &&
+    currentUrl.pathname !== '/auth/callback'
+  ) {
+    return <Navigate replace to={buildAuthCallbackPath(currentUrl.search, currentUrl.hash)} />
+  }
 
   if (status === 'loading') {
     return (

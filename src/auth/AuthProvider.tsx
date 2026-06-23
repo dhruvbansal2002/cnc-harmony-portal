@@ -78,6 +78,8 @@ const CUSTOMER_SELECT = `
 const PORTAL_USER_RETRY_ATTEMPTS = 8
 const PORTAL_USER_RETRY_DELAY_MS = 250
 const DISCORD_EMAIL_MISSING_ERROR = 'Discord did not provide an email. Contact management.'
+const DISCORD_PORTAL_ROW_MISSING_ERROR =
+  'Discord login succeeded, but portal access row was not created. Contact management.'
 
 const defaultState: AuthState = {
   status: 'loading',
@@ -273,7 +275,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: 'setup',
         session,
         authUser: session.user,
-        error: isDiscordOAuthUser(session.user) ? DISCORD_EMAIL_MISSING_ERROR : null,
+        error: isDiscordOAuthUser(session.user)
+          ? (session.user.email
+            ? DISCORD_PORTAL_ROW_MISSING_ERROR
+            : DISCORD_EMAIL_MISSING_ERROR)
+          : null,
       })
       return
     }
@@ -466,7 +472,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const supabase = getSupabaseClient()
-    const redirectTo = `${window.location.origin}/dashboard`
+    const redirectTo = `${window.location.origin}/auth/callback`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: {

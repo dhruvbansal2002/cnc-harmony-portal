@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { DiscordAuthButton } from '../components/auth/DiscordAuthButton'
 import { useAuth } from '../auth/useAuth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import { buildAuthCallbackPath, hasAuthCallbackParams } from '../auth/oauth'
 
 export function SignupPage() {
+  const location = useLocation()
   const {
     status,
     session,
@@ -20,6 +22,10 @@ export function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  if (hasAuthCallbackParams(location.search, location.hash)) {
+    return <Navigate replace to={buildAuthCallbackPath(location.search, location.hash)} />
+  }
 
   if (status === 'ready') {
     if (accessLevel === 'management' || accessLevel === 'employee') {

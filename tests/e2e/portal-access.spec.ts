@@ -108,6 +108,12 @@ async function expectPublicShell(page: Page) {
   }
 }
 
+async function expectDiscordButtonIsSafe(page: Page) {
+  const discordButton = page.getByRole('button', { name: 'Continue with Discord', exact: true })
+  await expect(discordButton).toBeVisible()
+  await expect(discordButton).toHaveAttribute('type', 'button')
+}
+
 async function expectPortalShell(page: Page) {
   await expect(page.locator('aside')).toBeVisible()
   await expect(page.getByText('Public catalog access without login', { exact: false })).toHaveCount(0)
@@ -256,15 +262,39 @@ async function expectSidebarLinksAbsent(page: Page, linkNames: string[]) {
   }
 }
 
-async function loginAs(page: Page, credentials: { email: string; password: string }) {
+async function loginAs(
+  page: Page,
+  credentials: { email: string; password: string },
+  expectedLanding: 'dashboard' | 'access' = 'dashboard',
+) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
   await page.getByLabel('Staff Email').fill(credentials.email)
   await page.getByLabel('Password').fill(credentials.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 15000 })
-  await expect(
-    page.getByRole('heading', { name: /^(Management|Employee) Dashboard$/ }),
-  ).toBeVisible({ timeout: 15000 })
+  if (expectedLanding === 'dashboard') {
+    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 15000 })
+    await expect(
+      page.getByRole('heading', { name: /^(Management|Employee) Dashboard$/ }),
+    ).toBeVisible({ timeout: 15000 })
+  } else {
+    await expect(page).toHaveURL(/\/access$/, { timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Employee Verification' })).toBeVisible({
+      timeout: 15000,
+    })
+  }
+}
+
+async function verifyEmployeeAccess(page: Page, identifier: string) {
+  await expect(page).toHaveURL(/\/access$/, { timeout: 15000 })
+  await expect(page.getByRole('heading', { name: 'Employee Verification' })).toBeVisible({
+    timeout: 15000,
+  })
+  await page.getByLabel('Discord username or character name').fill(identifier)
+  await page.getByRole('button', { name: 'Verify and continue' }).click()
+  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 20000 })
+  await expect(page.getByRole('heading', { name: /^(Management|Employee) Dashboard$/ })).toBeVisible({
+    timeout: 20000,
+  })
 }
 
 test.describe('public access', () => {
@@ -283,6 +313,7 @@ test.describe('public access', () => {
     await headerStaffLoginLink.click()
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.getByRole('heading', { name: 'Staff Login' })).toBeVisible()
+    await expectDiscordButtonIsSafe(page)
     await expect(page.getByRole('button', { name: 'Actions', exact: true })).toHaveCount(0)
 
     for (const route of publicRoutes) {
@@ -310,6 +341,17 @@ test.describe('public access', () => {
     }
 
     expect(notFoundResponses, `Unexpected 404 responses: ${notFoundResponses.join(', ')}`).toEqual([])
+  })
+
+  test('discord callback parameters on login and signup forward to the auth callback route', async ({
+    page,
+  }) => {
+    await clearBrowserState(page)
+
+    for (const path of ['/login', '/signup']) {
+      await page.goto(`${path}?code=test-auth-code`, { waitUntil: 'domcontentloaded' })
+      await expect(page).toHaveURL(/\/auth\/callback\?code=test-auth-code$/)
+    }
   })
 
   test('public visitors can open staff login and sign in from the public shell', async ({
@@ -353,6 +395,7 @@ test.describe('public access', () => {
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.getByRole('heading', { name: 'Staff Login' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Create Staff Account' })).toBeVisible()
+    await expectDiscordButtonIsSafe(page)
     await expect(page.getByLabel('Staff Email')).toBeVisible()
     await expect(page.getByLabel('Password')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
@@ -384,6 +427,7 @@ test.describe('public access', () => {
     await page.getByRole('link', { name: 'Create Staff Account' }).click()
     await expect(page).toHaveURL(/\/signup$/)
     await expect(page.getByRole('heading', { name: 'Staff Account Signup' })).toBeVisible()
+    await expectDiscordButtonIsSafe(page)
     await expect(page.getByLabel('Staff Email')).toBeVisible()
     await expect(page.getByRole('textbox', { name: 'Password', exact: true })).toBeVisible()
     await expect(page.getByLabel('Confirm Password')).toBeVisible()
@@ -434,9 +478,17 @@ test.describe('public access', () => {
     await expectCarouselDeckWorks(page)
 
     await clearBrowserState(page)
-    await loginAs(page, employeeCredentials)
+    await loginAs(page, employeeCredentials, 'access')
 
-    for (const path of ['/', '/login']) {
+    for (const path of ['/', '/login', '/signup']) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' })
+      await expect(page).toHaveURL(/\/access$/)
+      await expect(page.getByRole('heading', { name: 'Employee Verification' })).toBeVisible()
+    }
+
+    await verifyEmployeeAccess(page, 'Jeet Oberoi')
+
+    for (const path of ['/', '/login', '/signup']) {
       await page.goto(path, { waitUntil: 'domcontentloaded' })
       await expect(page).toHaveURL(/\/dashboard$/)
       await expect(page.getByRole('heading', { name: 'Employee Dashboard' })).toBeVisible()
@@ -471,6 +523,7 @@ test.describe('public access', () => {
     await expect(page.getByRole('button', { name: 'Create Complimentary Item' })).toHaveCount(0)
     await expectCarouselDeckWorks(page)
     await expect(page.getByRole('button', { name: 'Actions', exact: true })).toHaveCount(0)
+
   })
 
   test('public visitors are redirected to staff login from internal routes', async ({ page }) => {
@@ -479,6 +532,15 @@ test.describe('public access', () => {
       await expect(page).toHaveURL(/\/login$/)
       await expect(page.getByRole('heading', { name: 'Staff Login' })).toBeVisible()
     }
+  })
+
+  test('public visitors can open the Discord callback route and land on login when unauthenticated', async ({
+    page,
+  }) => {
+    await clearBrowserState(page)
+    await page.goto('/auth/callback', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('heading', { name: 'Staff Login' })).toBeVisible()
   })
 })
 
@@ -649,8 +711,8 @@ test.describe('membership inheritance', () => {
 
       await expect(matchingCards.first()).toBeVisible()
 
-      await clearBrowserState(page)
-      await loginAs(page, employeeCredentials)
+    await clearBrowserState(page)
+    await loginAs(page, employeeCredentials)
 
       await page.goto(target.path, { waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: target.heading })).toBeVisible()

@@ -8,6 +8,7 @@ import { ExEmployeeSheetPage } from './pages/ex-employees/ExEmployeeSheetPage'
 import { ManagementProvidersPage } from './pages/management-providers/ManagementProvidersPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
+import { AuthCallbackPage } from './pages/AuthCallbackPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { AuditLogsPage } from './pages/audit-logs/AuditLogsPage'
 import { ComplimentaryItemsPage } from './pages/complimentary-items/ComplimentaryItemsPage'
@@ -123,6 +124,10 @@ export const router = createBrowserRouter([
       {
         path: '/login',
         element: publicLoginElement,
+      },
+      {
+        path: '/auth/callback',
+        element: <AuthCallbackPage />,
       },
       {
         path: '/signup',
