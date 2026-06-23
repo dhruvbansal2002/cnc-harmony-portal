@@ -6,7 +6,14 @@ import { useAuth } from '../auth/useAuth'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 export function LoginPage() {
-  const { status, session, signInWithPassword, signInWithDiscord, accessLevel } = useAuth()
+  const {
+    status,
+    session,
+    portalUser,
+    signInWithPassword,
+    signInWithDiscord,
+    accessLevel,
+  } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -14,6 +21,10 @@ export function LoginPage() {
 
   if (status === 'ready') {
     if (accessLevel === 'management' || accessLevel === 'employee') {
+      if (portalUser?.permission_level === 'employee' && !portalUser.employee_id) {
+        return <Navigate replace to="/access" />
+      }
+
       return <Navigate replace to="/dashboard" />
     }
 

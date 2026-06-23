@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
@@ -23,6 +23,27 @@ function AccessBody() {
     status === 'setup' &&
     portalUser?.permission_level === 'employee' &&
     portalUser.employee_id === null
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !session) {
+      return
+    }
+
+    console.debug('[AccessPage]', {
+      authUserId: session.user.id,
+      provider: session.user.app_metadata?.provider ?? 'unknown',
+      emailPresent: Boolean(session.user.email),
+      permissionLevel: portalUser?.permission_level ?? null,
+      employeeId: portalUser?.employee_id ? 'linked' : 'missing',
+      status,
+      routeDecision:
+        isEmployeeVerification || status === 'setup'
+          ? 'access'
+          : status === 'inactive'
+            ? 'blocked'
+            : 'dashboard',
+    })
+  }, [isEmployeeVerification, portalUser?.employee_id, portalUser?.permission_level, session, status])
 
   if (status === 'ready') {
     if (accessLevel === 'management' || accessLevel === 'employee') {
@@ -80,8 +101,8 @@ function AccessBody() {
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">Employee Verification</h1>
           <p className="mt-3 text-sm leading-6 text-slate-300">
-            Enter your Discord username or character name to link this staff login to your active
-            employee record.
+            Enter the exact Discord username or in-city character name from the Employee Sheet to
+            link this staff login to your active employee record.
           </p>
 
           <form className="mt-8 space-y-4" onSubmit={handleSubmit}>

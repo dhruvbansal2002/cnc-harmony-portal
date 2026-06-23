@@ -32,7 +32,7 @@ function LoadingScreen() {
 }
 
 export function RequireAuth() {
-  const { status, session, accessLevel } = useAuth()
+  const { status, session, accessLevel, portalUser } = useAuth()
 
   if (status === 'config_missing') {
     return <Navigate replace to="/login" />
@@ -54,6 +54,10 @@ export function RequireAuth() {
     return <LoadingScreen />
   }
 
+  if (portalUser?.permission_level === 'employee' && !portalUser.employee_id) {
+    return <Navigate replace to="/access" />
+  }
+
   return session && accessLevel === 'customer' ? (
     <Navigate replace to="/access" />
   ) : (
@@ -62,7 +66,7 @@ export function RequireAuth() {
 }
 
 export function RequirePublicOnly({ children }: { children: ReactNode }) {
-  const { status, session, accessLevel } = useAuth()
+  const { status, session, accessLevel, portalUser } = useAuth()
 
   if (status === 'config_missing') {
     return children
@@ -81,6 +85,10 @@ export function RequirePublicOnly({ children }: { children: ReactNode }) {
   }
 
   if (status === 'ready') {
+    if (portalUser?.permission_level === 'employee' && !portalUser.employee_id) {
+      return <Navigate replace to="/access" />
+    }
+
     return accessLevel === 'management' || accessLevel === 'employee' ? (
       <Navigate replace to="/dashboard" />
     ) : (

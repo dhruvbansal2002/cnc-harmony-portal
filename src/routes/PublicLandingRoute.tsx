@@ -4,7 +4,7 @@ import { ScreenMessage } from '../auth/RequireAuth'
 import { PublicAnnouncementsPage } from '../pages/public/PublicAnnouncementsPage'
 
 export function PublicLandingRoute() {
-  const { status, accessLevel } = useAuth()
+  const { status, accessLevel, portalUser } = useAuth()
 
   if (status === 'loading') {
     return (
@@ -13,6 +13,14 @@ export function PublicLandingRoute() {
         body="Checking Supabase session and portal authorization."
       />
     )
+  }
+
+  if (
+    status === 'ready' &&
+    portalUser?.permission_level === 'employee' &&
+    !portalUser.employee_id
+  ) {
+    return <Navigate replace to="/access" />
   }
 
   if (status === 'ready' && (accessLevel === 'management' || accessLevel === 'employee')) {
