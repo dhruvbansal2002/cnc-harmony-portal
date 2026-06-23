@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { DiscordAuthButton } from '../components/auth/DiscordAuthButton'
 import { useAuth } from '../auth/useAuth'
 import { isSupabaseConfigured } from '../lib/supabase'
 
@@ -85,14 +86,7 @@ export function LoginPage() {
         </p>
 
         <div className="mt-8 space-y-3">
-          <button
-            className="w-full rounded-2xl border border-[#ff8a3d]/30 bg-gradient-to-r from-[#ff8a3d] to-[#ff5a1f] px-4 py-3 text-sm font-semibold text-white transition hover:from-[#ff9e5a] hover:to-[#ff6a2f] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={loading}
-            onClick={handleDiscordLogin}
-            type="button"
-          >
-            {loading ? 'Connecting...' : 'Continue with Discord'}
-          </button>
+          <DiscordAuthButton loading={loading} onClick={handleDiscordLogin} />
 
           <p className="text-center text-xs leading-5 text-slate-400">
             Discord OAuth is for staff access only.

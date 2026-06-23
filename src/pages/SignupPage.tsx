@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { DiscordAuthButton } from '../components/auth/DiscordAuthButton'
 import { useAuth } from '../auth/useAuth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 export function SignupPage() {
-  const { status, session, accessLevel, refreshAuthState } = useAuth()
+  const { status, session, accessLevel, refreshAuthState, signInWithDiscord } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -58,8 +59,8 @@ export function SignupPage() {
         email: email.trim(),
         password,
         options: {
-    emailRedirectTo: `${window.location.origin}/login`,
-        }
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       })
 
       if (signUpError) {
@@ -82,6 +83,21 @@ export function SignupPage() {
     }
   }
 
+  const handleDiscordSignup = async () => {
+    setError(null)
+    setSuccessMessage(null)
+
+    try {
+      setLoading(true)
+      await signInWithDiscord()
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : 'Discord sign in failed.',
+      )
+      setLoading(false)
+    }
+  }
+
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-slate-100">
       <section className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl shadow-cyan-950/30 backdrop-blur">
@@ -90,11 +106,19 @@ export function SignupPage() {
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Staff Account Signup</h1>
         <p className="mt-3 text-sm leading-6 text-slate-300">
-          Create a staff account with email and password only. After signup, verify using your
-          Discord username or character name from the Employee Sheet.
+          Create a staff account with email and password, or use Discord to avoid email
+          confirmation delays. After signup, verify using your Discord username or character name
+          from the Employee Sheet.
         </p>
 
-        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+        <div className="mt-8 space-y-3">
+          <DiscordAuthButton loading={loading} onClick={handleDiscordSignup} />
+          <p className="text-center text-xs leading-5 text-slate-400">
+            Use Discord to avoid email confirmation delays.
+          </p>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-200">Staff Email</span>
             <input
