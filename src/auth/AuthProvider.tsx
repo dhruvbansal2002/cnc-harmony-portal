@@ -75,8 +75,6 @@ const CUSTOMER_SELECT = `
   archived_at,
   deleted_at
 `
-const PORTAL_USER_RETRY_ATTEMPTS = 8
-const PORTAL_USER_RETRY_DELAY_MS = 250
 const DISCORD_EMAIL_MISSING_ERROR = 'Discord did not provide an email. Contact management.'
 const DISCORD_PORTAL_ROW_MISSING_ERROR =
   'Discord login succeeded, but portal access row was not created. Contact management.'
@@ -119,12 +117,6 @@ function deriveAccessLevel(
   return 'employee'
 }
 
-function waitForPortalUserRetry() {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, PORTAL_USER_RETRY_DELAY_MS)
-  })
-}
-
 function isDiscordOAuthUser(sessionUser: Session['user']) {
   const provider = sessionUser.app_metadata?.provider
   const identityProviders = sessionUser.identities?.map((identity) => identity.provider)
@@ -134,6 +126,10 @@ function isDiscordOAuthUser(sessionUser: Session['user']) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isMountedRef = useRef(true)
+  const syncInFlightRef = useRef<Promise<void> | null>(null)
+  const syncInFlightUserIdRef = useRef<string | null>(null)
+  const lastObservedSessionUserIdRef = useRef<string | null>(null)
+  const lastResolvedUserIdRef = useRef<string | null>(null)
   const [state, setState] = useState<AuthState>(
     isSupabaseConfigured
       ? defaultState
@@ -145,215 +141,233 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
   )
 
-  const syncFromSession = useCallback(async (session: Session | null) => {
-
-    if (!isMountedRef.current) {
-      return
-    }
-
-    if (!session?.user) {
-      setState({
-        ...defaultState,
-        status: 'signed_out',
-      })
-      return
-    }
-
-    const supabase = getSupabaseClient()
-
-    if (isDiscordOAuthUser(session.user) && !session.user.email) {
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        error: DISCORD_EMAIL_MISSING_ERROR,
-      })
-      return
-    }
-
-
-    setState((current) => ({
-      ...current,
-      status: 'loading',
-      session,
-      authUser: session.user,
-      error: null,
-    }))
-
-    let portalUserData: PortalUserRecord | null = null
-    let portalUserError: { message: string } | null = null
-
-    for (let attempt = 0; attempt < PORTAL_USER_RETRY_ATTEMPTS; attempt += 1) {
-      const { data, error } = await supabase
-        .from('users')
-        .select(AUTH_USER_SELECT)
-        .eq('id', session.user.id)
-        .maybeSingle()
-
-      portalUserData = data as PortalUserRecord | null
-      portalUserError = error
-
-      if (!portalUserError && portalUserData) {
-        break
+  const syncFromSession = useCallback(
+    async (session: Session | null, options?: { force?: boolean }) => {
+      if (!isMountedRef.current) {
+        return
       }
 
-      if (portalUserError) {
-        break
+      if (!session?.user) {
+        lastObservedSessionUserIdRef.current = null
+        lastResolvedUserIdRef.current = null
+        setState({
+          ...defaultState,
+          status: 'signed_out',
+        })
+        return
       }
 
-      if (attempt < PORTAL_USER_RETRY_ATTEMPTS - 1) {
-        await waitForPortalUserRetry()
+      const sessionUserId = session.user.id
+
+      if (!options?.force) {
+        if (lastResolvedUserIdRef.current === sessionUserId) {
+          return
+        }
+
+        if (
+          syncInFlightRef.current &&
+          syncInFlightUserIdRef.current === sessionUserId
+        ) {
+          await syncInFlightRef.current
+          return
+        }
       }
-    }
 
-    if (!isMountedRef.current) {
-      return
-    }
+      const run = (async () => {
+        const supabase = getSupabaseClient()
 
-    if (portalUserError) {
+        if (isDiscordOAuthUser(session.user) && !session.user.email) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            error: DISCORD_EMAIL_MISSING_ERROR,
+          })
+          return
+        }
 
-      setState({
-        ...defaultState,
-        status: 'signed_out',
-        error: portalUserError.message,
-      })
-      return
-    }
+        setState((current) => ({
+          ...current,
+          status: 'loading',
+          session,
+          authUser: session.user,
+          error: null,
+        }))
 
-    if (!portalUserData) {
-
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        error: isDiscordOAuthUser(session.user)
-          ? (session.user.email
-            ? DISCORD_PORTAL_ROW_MISSING_ERROR
-            : DISCORD_EMAIL_MISSING_ERROR)
-          : null,
-      })
-      return
-    }
-
-    const portalUser = portalUserData as PortalUserRecord
-
-    if (!portalUser.is_active) {
-      setState({
-        ...defaultState,
-        status: 'inactive',
-        session,
-        authUser: session.user,
-        portalUser,
-        error: 'This portal account is inactive.',
-      })
-      return
-    }
-
-    const employeePromise = portalUser.employee_id
-      ? supabase
-          .from('employees')
-          .select(EMPLOYEE_SELECT)
-          .eq('id', portalUser.employee_id)
+        const { data, error } = await supabase
+          .from('users')
+          .select(AUTH_USER_SELECT)
+          .eq('id', session.user.id)
           .maybeSingle()
-      : Promise.resolve({ data: null, error: null })
 
-    const customerPromise = portalUser.customer_id
-      ? supabase
-          .from('customers')
-          .select(CUSTOMER_SELECT)
-          .eq('id', portalUser.customer_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null })
+        if (!isMountedRef.current) {
+          return
+        }
 
-    const [employeeResult, customerResult] = await Promise.all([
-      employeePromise,
-      customerPromise,
-    ])
+        if (error) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'signed_out',
+            error: error.message,
+          })
+          return
+        }
 
-    if (!isMountedRef.current) {
-      return
-    }
+        if (!data) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            error: isDiscordOAuthUser(session.user)
+              ? (session.user.email
+                ? DISCORD_PORTAL_ROW_MISSING_ERROR
+                : DISCORD_EMAIL_MISSING_ERROR)
+              : null,
+          })
+          return
+        }
 
-    if (employeeResult.error) {
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        portalUser,
-        error: employeeResult.error.message,
-      })
-      return
-    }
+        const portalUser = data as PortalUserRecord
 
-    if (customerResult.error) {
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        portalUser,
-        error: customerResult.error.message,
-      })
-      return
-    }
+        if (!portalUser.is_active) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'inactive',
+            session,
+            authUser: session.user,
+            portalUser,
+            error: 'This portal account is inactive.',
+          })
+          return
+        }
 
-    const employee = employeeResult.data as EmployeeRecord | null
-    const customer = customerResult.data as CustomerRecord | null
+        const employeePromise = portalUser.employee_id
+          ? supabase
+              .from('employees')
+              .select(EMPLOYEE_SELECT)
+              .eq('id', portalUser.employee_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null })
 
-    const employeeHasActiveLink =
-      employee !== null &&
-      employee.archived_at === null &&
-      employee.deleted_at === null &&
-      employee.status === 'active'
+        const customerPromise = portalUser.customer_id
+          ? supabase
+              .from('customers')
+              .select(CUSTOMER_SELECT)
+              .eq('id', portalUser.customer_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null })
 
-    if (
-      portalUser.permission_level === 'employee' &&
-      (!portalUser.employee_id || !employeeHasActiveLink)
-    ) {
+        const [employeeResult, customerResult] = await Promise.all([
+          employeePromise,
+          customerPromise,
+        ])
 
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        portalUser,
-        error: null,
-      })
-      return
-    }
+        if (!isMountedRef.current) {
+          return
+        }
 
-    if (
-      portalUser.permission_level === 'customer' &&
-      (!customer || customer.archived_at !== null || customer.deleted_at !== null || customer.status !== 'active')
-    ) {
-      setState({
-        ...defaultState,
-        status: 'setup',
-        session,
-        authUser: session.user,
-        portalUser,
-        error: 'This portal user is missing the linked customer profile.',
-      })
-      return
-    }
+        if (employeeResult.error) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            portalUser,
+            error: employeeResult.error.message,
+          })
+          return
+        }
 
-    const accessLevel = deriveAccessLevel(portalUser, employee)
+        if (customerResult.error) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            portalUser,
+            error: customerResult.error.message,
+          })
+          return
+        }
 
+        const employee = employeeResult.data as EmployeeRecord | null
+        const customer = customerResult.data as CustomerRecord | null
 
-    setState({
-      status: 'ready',
-      session,
-      authUser: session.user,
-      portalUser,
-      employee,
-      customer,
-      accessLevel,
-      error: null,
-    })
-  }, [])
+        const employeeHasActiveLink =
+          employee !== null &&
+          employee.archived_at === null &&
+          employee.deleted_at === null &&
+          employee.status === 'active'
+
+        if (
+          portalUser.permission_level === 'employee' &&
+          (!portalUser.employee_id || !employeeHasActiveLink)
+        ) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            portalUser,
+            error: null,
+          })
+          return
+        }
+
+        if (
+          portalUser.permission_level === 'customer' &&
+          (!customer || customer.archived_at !== null || customer.deleted_at !== null || customer.status !== 'active')
+        ) {
+          lastResolvedUserIdRef.current = sessionUserId
+          setState({
+            ...defaultState,
+            status: 'setup',
+            session,
+            authUser: session.user,
+            portalUser,
+            error: 'This portal user is missing the linked customer profile.',
+          })
+          return
+        }
+
+        const accessLevel = deriveAccessLevel(portalUser, employee)
+        lastResolvedUserIdRef.current = sessionUserId
+
+        setState({
+          status: 'ready',
+          session,
+          authUser: session.user,
+          portalUser,
+          employee,
+          customer,
+          accessLevel,
+          error: null,
+        })
+      })()
+
+      syncInFlightRef.current = run
+      syncInFlightUserIdRef.current = sessionUserId
+
+      try {
+        await run
+      } finally {
+        if (syncInFlightRef.current === run) {
+          syncInFlightRef.current = null
+          syncInFlightUserIdRef.current = null
+        }
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -365,11 +379,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient()
 
     void supabase.auth.getSession().then(({ data }) => {
+      const nextUserId = data.session?.user.id ?? null
+
+      if (lastObservedSessionUserIdRef.current === nextUserId) {
+        return
+      }
+
+      lastObservedSessionUserIdRef.current = nextUserId
       void syncFromSession(data.session)
     })
 
     const { data: subscriptionData } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        const nextUserId = session?.user.id ?? null
+
+        if (lastObservedSessionUserIdRef.current === nextUserId) {
+          return
+        }
+
+        lastObservedSessionUserIdRef.current = nextUserId
         void syncFromSession(session)
       },
     )
@@ -380,7 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [syncFromSession])
 
-  const signInWithPassword = async (email: string, password: string) => {
+  const signInWithPassword = useCallback(async (email: string, password: string) => {
     if (!isSupabaseConfigured) {
       throw new Error(
         'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.',
@@ -393,9 +421,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       throw error
     }
-  }
+  }, [])
 
-  const signInWithDiscord = async () => {
+  const signInWithDiscord = useCallback(async () => {
     if (!isSupabaseConfigured) {
       throw new Error(
         'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.',
@@ -414,26 +442,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       throw error
     }
-  }
+  }, [])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     if (!isSupabaseConfigured) {
       return
     }
 
     const supabase = getSupabaseClient()
     await supabase.auth.signOut()
-  }
+  }, [])
 
-  const refreshAuthState = async () => {
+  const refreshAuthState = useCallback(async () => {
     if (!isSupabaseConfigured) {
       return
     }
 
     const supabase = getSupabaseClient()
     const { data } = await supabase.auth.getSession()
-    await syncFromSession(data.session)
-  }
+    lastObservedSessionUserIdRef.current = data.session?.user.id ?? null
+    await syncFromSession(data.session, { force: true })
+  }, [syncFromSession])
 
   const value: AuthContextValue = {
     ...state,

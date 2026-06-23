@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { useAuth } from '../auth/useAuth'
 import type { EmployeeRecord, PortalUserRecord } from '../auth/types'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
@@ -21,8 +20,8 @@ type CallbackStep =
   | 'timeout'
 
 const CALLBACK_TIMEOUT_MS = 8000
-const CALLBACK_SESSION_WAIT_MS = 5000
-const CALLBACK_PROFILE_WAIT_MS = 2500
+const MAX_SESSION_CHECKS = 3
+const MAX_PROFILE_CHECKS = 3
 const CALLBACK_RETRY_DELAY_MS = 250
 const AUTH_USER_SELECT = 'id,email,permission_level,is_active,employee_id,customer_id'
 const EMPLOYEE_SELECT = 'id,status,archived_at,deleted_at'
@@ -38,50 +37,50 @@ function waitForCallbackRetry() {
   })
 }
 
-async function waitForSessionFromAuthState(
+async function waitForSessionWithLimit(
   supabase: ReturnType<typeof getSupabaseClient>,
   timeoutMs: number,
+  onAttempt: (attempt: number) => void,
 ): Promise<Session | null> {
   const deadline = Date.now() + timeoutMs
+  let latestSession: Session | null = null
 
-  const initialSession = await supabase.auth.getSession()
-  if (initialSession.data.session) {
-    return initialSession.data.session
-  }
+  const { data: subscriptionData } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (session) {
+      latestSession = session
+    }
+  })
 
-  return await new Promise((resolve) => {
-    const subscription = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        subscription.data.subscription.unsubscribe()
-        resolve(session)
+  try {
+    for (let attempt = 1; attempt <= MAX_SESSION_CHECKS && Date.now() < deadline; attempt += 1) {
+      onAttempt(attempt)
+
+      if (latestSession) {
+        return latestSession
       }
-    })
 
-    const poll = async () => {
-      while (Date.now() < deadline) {
-        const { data } = await supabase.auth.getSession()
+      const { data } = await supabase.auth.getSession()
 
-        if (data.session) {
-          subscription.data.subscription.unsubscribe()
-          resolve(data.session)
-          return
-        }
+      if (data.session) {
+        return data.session
+      }
 
+      if (attempt < MAX_SESSION_CHECKS) {
         await waitForCallbackRetry()
       }
-
-      subscription.data.subscription.unsubscribe()
-      resolve(null)
     }
 
-    void poll()
-  })
+    return latestSession
+  } finally {
+    subscriptionData.subscription.unsubscribe()
+  }
 }
 
 export function AuthCallbackPage() {
-  const { refreshAuthState } = useAuth()
   const [outcome, setOutcome] = useState<CallbackOutcome>({ kind: 'loading' })
   const [step, setStep] = useState<CallbackStep>('waiting_session')
+  const [sessionAttempts, setSessionAttempts] = useState(0)
+  const [profileAttempts, setProfileAttempts] = useState(0)
   const settledRef = useRef(false)
 
   useEffect(() => {
@@ -128,52 +127,49 @@ export function AuthCallbackPage() {
         const currentUrl = window.location.href
         const callbackUrl = new URL(currentUrl)
         const authCode = callbackUrl.searchParams.get('code')
-        const hasOAuthCallbackPayload =
-          callbackUrl.searchParams.has('code') ||
-          callbackUrl.searchParams.has('error') ||
-          callbackUrl.searchParams.has('access_token') ||
-          callbackUrl.searchParams.has('refresh_token') ||
-          callbackUrl.hash.includes('access_token') ||
-          callbackUrl.hash.includes('refresh_token')
 
         setStep('waiting_session')
+        setSessionAttempts(0)
+        setProfileAttempts(0)
 
         if (authCode) {
           await waitForCallbackRetry()
         }
 
-        let callbackSession = await waitForSessionFromAuthState(
+        const callbackSession = await waitForSessionWithLimit(
           supabase,
-          hasOAuthCallbackPayload ? CALLBACK_SESSION_WAIT_MS : CALLBACK_SESSION_WAIT_MS,
+          CALLBACK_TIMEOUT_MS,
+          (attempt) => {
+            if (active && !settledRef.current) {
+              setSessionAttempts(attempt)
+            }
+          },
         )
 
-        if (!callbackSession && authCode) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(authCode)
-
-          if (exchangeError && import.meta.env.DEV) {
-            console.warn('[AuthCallbackPage] exchangeCodeForSession failed', exchangeError.message)
-          }
-
-          callbackSession = await waitForSessionFromAuthState(supabase, CALLBACK_TIMEOUT_MS)
-        }
-
         if (!callbackSession?.user) {
-          settle({
-            kind: 'login',
-            message: authCode
-              ? DISCORD_SESSION_MISSING_ERROR
-              : 'Your staff session could not be restored. Sign in again.',
-          })
+          settle(
+            {
+              kind: 'timeout',
+              message: authCode
+                ? DISCORD_SESSION_MISSING_ERROR
+                : 'Your staff session could not be restored. Sign in again.',
+            },
+            'timeout',
+          )
           return
         }
-
-        void refreshAuthState().catch(() => {})
 
         const authUserId = callbackSession.user.id
         let portalUser: PortalUserRecord | null = null
         setStep('loading_profile')
-        const portalDeadline = Date.now() + CALLBACK_PROFILE_WAIT_MS
-        while (Date.now() < portalDeadline) {
+        const portalDeadline = Date.now() + CALLBACK_TIMEOUT_MS
+        for (let attempt = 1; attempt <= MAX_PROFILE_CHECKS && Date.now() < portalDeadline; attempt += 1) {
+          if (!active || settledRef.current) {
+            return
+          }
+
+          setProfileAttempts(attempt)
+
           const { data, error } = await supabase
             .from('users')
             .select(AUTH_USER_SELECT)
@@ -181,10 +177,18 @@ export function AuthCallbackPage() {
             .maybeSingle()
 
           if (error) {
-            settle({
-              kind: 'error',
-              message: error.message,
-            })
+            settle(
+              {
+                kind: 'access',
+                message:
+                  error.code === '42501' ||
+                  error.message.toLowerCase().includes('permission') ||
+                  error.message.toLowerCase().includes('rls')
+                    ? 'Discord login succeeded, but portal access lookup was blocked. Contact management.'
+                    : error.message,
+              },
+              'routing_access',
+            )
             return
           }
 
@@ -194,7 +198,9 @@ export function AuthCallbackPage() {
             break
           }
 
-          await waitForCallbackRetry()
+          if (attempt < MAX_PROFILE_CHECKS) {
+            await waitForCallbackRetry()
+          }
         }
 
         if (!portalUser) {
@@ -304,7 +310,7 @@ export function AuthCallbackPage() {
       active = false
       window.clearTimeout(timeoutId)
     }
-  }, [refreshAuthState])
+  }, [])
 
   if (outcome.kind === 'dashboard') {
     return <Navigate replace to="/dashboard" />
@@ -381,7 +387,8 @@ export function AuthCallbackPage() {
           </p>
           {import.meta.env.DEV ? (
             <p className="mt-4 text-xs font-mono uppercase tracking-[0.28em] text-amber-200/90">
-              Step: {step}
+              Step: {step} · Session attempts: {sessionAttempts}/{MAX_SESSION_CHECKS} · Profile
+              attempts: {profileAttempts}/{MAX_PROFILE_CHECKS}
             </p>
           ) : null}
         </section>
