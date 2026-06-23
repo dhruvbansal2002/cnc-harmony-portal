@@ -309,7 +309,7 @@ function ExEmployeeTable({
       </div>
 
       <div className="mt-6 overflow-x-auto">
-        <table className="min-w-[1400px] w-full border-separate border-spacing-0">
+        <table className="min-w-[1280px] w-full border-separate border-spacing-0">
           <thead>
             <tr className="text-left text-[0.7rem] uppercase tracking-[0.28em] text-slate-500">
               <th className="border-b border-white/10 px-4 py-3">Character Name</th>

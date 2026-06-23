@@ -24,6 +24,7 @@ const DEFAULT_POSITION: MenuPosition = {
 
 const VIEWPORT_PADDING = 12
 const MENU_OFFSET = 10
+const MENU_MAX_WIDTH = 320
 
 export function ActionMenu({
   children,
@@ -129,8 +130,18 @@ export function ActionMenu({
       const viewportHeight = window.innerHeight
       const menuWidth = menuRect.width
       const menuHeight = menuRect.height
+      const fitsOnLeft = triggerRect.right - menuWidth >= VIEWPORT_PADDING
+      const fitsOnRight = triggerRect.left + menuWidth <= viewportWidth - VIEWPORT_PADDING
 
-      let left = align === 'start' ? triggerRect.left : triggerRect.right - menuWidth
+      let left =
+        align === 'start'
+          ? fitsOnRight
+            ? triggerRect.left
+            : triggerRect.right - menuWidth
+          : fitsOnLeft
+            ? triggerRect.right - menuWidth
+            : triggerRect.left
+
       left = Math.min(
         Math.max(VIEWPORT_PADDING, left),
         Math.max(VIEWPORT_PADDING, viewportWidth - menuWidth - VIEWPORT_PADDING),
@@ -153,7 +164,13 @@ export function ActionMenu({
       setPosition({
         top,
         left,
-        transformOrigin: openAbove ? 'bottom right' : 'top right',
+        transformOrigin: openAbove
+          ? align === 'start'
+            ? 'bottom left'
+            : 'bottom right'
+          : align === 'start'
+            ? 'top left'
+            : 'top right',
       })
       setIsReady(true)
     })
@@ -191,7 +208,10 @@ export function ActionMenu({
           style={{
             left: `${position.left}px`,
             top: `${position.top}px`,
+            maxWidth: `min(${MENU_MAX_WIDTH}px, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
+            maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
             visibility: isReady ? 'visible' : 'hidden',
+            willChange: 'top, left, transform',
           }}
         >
           <div

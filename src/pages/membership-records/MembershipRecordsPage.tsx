@@ -432,12 +432,11 @@ function MembershipRecordTable({
       </div>
 
       <div className="mt-6 overflow-x-auto">
-        <table className="min-w-[1500px] w-full border-separate border-spacing-0">
+        <table className="min-w-[1320px] w-full border-separate border-spacing-0">
           <thead>
             <tr className="text-left text-[0.7rem] uppercase tracking-[0.28em] text-slate-500">
               <th className="border-b border-white/10 px-4 py-3">Customer Name</th>
               <th className="border-b border-white/10 px-4 py-3">Citizen ID</th>
-              <th className="border-b border-white/10 px-4 py-3">Phone Number</th>
               <th className="border-b border-white/10 px-4 py-3">Membership Plan</th>
               <th className="border-b border-white/10 px-4 py-3">Issued By</th>
               <th className="border-b border-white/10 px-4 py-3">Given Date</th>
@@ -451,7 +450,7 @@ function MembershipRecordTable({
           <tbody>
             {records.length === 0 ? (
               <tr>
-                <td className="px-4 py-10 text-sm text-slate-400" colSpan={showActions ? 10 : 9}>
+                <td className="px-4 py-10 text-sm text-slate-400" colSpan={showActions ? 9 : 8}>
                   No membership records found.
                 </td>
               </tr>
@@ -477,9 +476,6 @@ function MembershipRecordTable({
                       </td>
                       <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
                         {getMembershipRecordCitizenId(record)}
-                      </td>
-                      <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
-                        {getMembershipRecordPhoneNumber(record)}
                       </td>
                       <td className="border-b border-white/5 px-4 py-4 text-sm text-slate-200">
                         {record.membership_plan?.plan_name ?? 'Unknown plan'}
@@ -569,7 +565,7 @@ function MembershipRecordTable({
 
                     {isExpanded && !isEditing ? (
                       <tr>
-                        <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 10 : 9}>
+                        <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 9 : 8}>
                           <MembershipRecordDetailPanel record={record} showNotes={accessLevel !== 'customer'} />
                         </td>
                       </tr>
@@ -577,7 +573,7 @@ function MembershipRecordTable({
 
                     {isEditing && editingRecord ? (
                       <tr>
-                        <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 10 : 9}>
+                        <td className="border-b border-white/5 px-4 pb-5 pt-0" colSpan={showActions ? 9 : 8}>
                           <MembershipRecordForm
                             key={editingRecord.id}
                             description="Update the membership record in Supabase. Changes save immediately."
