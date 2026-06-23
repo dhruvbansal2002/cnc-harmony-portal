@@ -318,6 +318,7 @@ export interface AuditLogRecord {
 
 export interface AuthState {
   status: AuthStatus
+  hasCheckedSession: boolean
   session: Session | null
   authUser: User | null
   portalUser: PortalUserRecord | null

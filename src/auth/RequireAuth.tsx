@@ -32,13 +32,13 @@ function LoadingScreen() {
 }
 
 export function RequireAuth() {
-  const { status, session, accessLevel, portalUser } = useAuth()
+  const { status, hasCheckedSession, session, accessLevel, portalUser } = useAuth()
 
   if (status === 'config_missing') {
     return <Navigate replace to="/login" />
   }
 
-  if (status === 'loading') {
+  if (!hasCheckedSession || status === 'loading') {
     return <LoadingScreen />
   }
 
@@ -66,9 +66,13 @@ export function RequireAuth() {
 }
 
 export function RequirePublicOnly({ children }: { children: ReactNode }) {
-  const { status, session, accessLevel, portalUser } = useAuth()
+  const { status, hasCheckedSession, session, accessLevel, portalUser } = useAuth()
 
   if (status === 'config_missing') {
+    return children
+  }
+
+  if (!hasCheckedSession) {
     return children
   }
 

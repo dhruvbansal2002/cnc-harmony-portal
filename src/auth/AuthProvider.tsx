@@ -81,6 +81,7 @@ const DISCORD_PORTAL_ROW_MISSING_ERROR =
 
 const defaultState: AuthState = {
   status: 'loading',
+  hasCheckedSession: false,
   session: null,
   authUser: null,
   portalUser: null,
@@ -147,12 +148,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      if (import.meta.env.DEV) {
+        console.log(
+          '[AuthProvider] Session exists:',
+          Boolean(session?.user),
+          'Fetching profile:',
+          Boolean(session?.user),
+        )
+      }
+
       if (!session?.user) {
         lastObservedSessionUserIdRef.current = null
         lastResolvedUserIdRef.current = null
         setState({
           ...defaultState,
           status: 'signed_out',
+          hasCheckedSession: true,
         })
         return
       }
@@ -181,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             error: DISCORD_EMAIL_MISSING_ERROR,
@@ -211,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'signed_out',
+            hasCheckedSession: true,
             error: error.message,
           })
           return
@@ -221,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             error: isDiscordOAuthUser(session.user)
@@ -239,6 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'inactive',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             portalUser,
@@ -277,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             portalUser,
@@ -290,6 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             portalUser,
@@ -315,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             portalUser,
@@ -331,6 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState({
             ...defaultState,
             status: 'setup',
+            hasCheckedSession: true,
             session,
             authUser: session.user,
             portalUser,
@@ -344,6 +363,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setState({
           status: 'ready',
+          hasCheckedSession: true,
           session,
           authUser: session.user,
           portalUser,
